@@ -1,0 +1,7 @@
+# Owner review is enforced only when branch protection on main requires review from code owners.
+# These paths decide what gets released and what a signer approves.
+/.github/CODEOWNERS @pegahcarter
+/.github/workflows/ @pegahcarter
+/contracts/ @pegahcarter
+/ts/src/safeTx.ts @pegahcarter
+/ts/src/plan.ts @pegahcarter
