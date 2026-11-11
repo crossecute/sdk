@@ -15,9 +15,10 @@
     "crossecute": "./dist/cli.js"
   },
   "files": [
+    "LICENSE",
+    "README.md",
     "contracts",
-    "dist",
-    "README.md"
+    "dist"
   ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
@@ -43,5 +44,9 @@
     "forge-std": "github:foundry-rs/forge-std#v1.17.0",
     "typescript": "5.9.3",
     "vitest": "4.0.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crossecute/sdk.git"
   }
 }
