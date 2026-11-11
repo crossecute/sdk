@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { formatEther, isHex } from "viem";
+import { formatEther } from "viem";
 import { checkPlan, parsePlan } from "./plan.js";
-import { proposePlan } from "./safe.js";
+import { checkSafeTx, parseSafeTxTypedData, safeTxHashes } from "./safeTx.js";
 
-const usage = `usage:
-  crossecute check <plan.json>     check a plan's calls against its batches
-  crossecute propose <plan.json>   check, then propose it to the owner Safe
+const usage = `usage: crossecute check <plan.json> [safe-tx.json]
 
-propose reads CROSSECUTE_RPC_URL (the home chain), SAFE_PROPOSER_PRIVATE_KEY, and SAFE_API_KEY
-or SAFE_TX_SERVICE_URL.`;
+Checks the plan's calls against its batches and, given the Safe transaction's typed data,
+that it carries exactly those calls. Prints the hashes a signer's device shows.
 
-async function main([command, path]: string[]): Promise<void> {
-  if (!path || (command !== "check" && command !== "propose")) throw new Error(usage);
-  const plan = parsePlan(readFileSync(path, "utf8"));
+The SDK holds no keys and sends nothing. Sign and propose with Forge Attest
+(./attest.sh --attest -- --ledger) or cast wallet sign --data --from-file <safe-tx.json>.`;
+
+function main([command, planPath, safeTxPath]: string[]): void {
+  if (command !== "check" || !planPath) throw new Error(usage);
+  const plan = parsePlan(readFileSync(planPath, "utf8"));
   checkPlan(plan);
   console.log(
     `plan for Safe ${plan.owner} on chain ${plan.homeChainId}: ${plan.calls.length} call(s), ` +
@@ -22,22 +23,20 @@ async function main([command, path]: string[]): Promise<void> {
   for (const b of plan.batches) {
     console.log(`  chain ${b.chainId}: ${b.bootstrap ? "bootstrap" : "message"} with ${b.calls.length} call(s) to ${b.receiver}`);
   }
-  if (command === "check") return;
+  if (!safeTxPath) return;
 
-  const rpcUrl = process.env.CROSSECUTE_RPC_URL;
-  const privateKey = process.env.SAFE_PROPOSER_PRIVATE_KEY;
-  if (!rpcUrl) throw new Error("CROSSECUTE_RPC_URL is not set");
-  if (!privateKey || !isHex(privateKey)) throw new Error("SAFE_PROPOSER_PRIVATE_KEY is not set to a hex key");
-  const { safeTxHash, nonce } = await proposePlan(plan, {
-    rpcUrl,
-    privateKey,
-    apiKey: process.env.SAFE_API_KEY,
-    txServiceUrl: process.env.SAFE_TX_SERVICE_URL,
-  });
-  console.log(`proposed at nonce ${nonce}: ${safeTxHash}`);
+  const envelope = parseSafeTxTypedData(readFileSync(safeTxPath, "utf8"));
+  checkSafeTx(plan, envelope);
+  const { domainHash, messageHash, safeTxHash } = safeTxHashes(envelope);
+  console.log(`Safe transaction at nonce ${envelope.tx.nonce}${envelope.tx.operation === 1 ? " through MultiSendCallOnly" : ""}`);
+  console.log(`  domain hash:  ${domainHash}`);
+  console.log(`  message hash: ${messageHash}`);
+  console.log(`  safeTxHash:   ${safeTxHash}`);
 }
 
-main(process.argv.slice(2)).catch((error: Error) => {
-  console.error(error.message);
+try {
+  main(process.argv.slice(2));
+} catch (error) {
+  console.error((error as Error).message);
   process.exit(1);
-});
+}

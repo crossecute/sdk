@@ -1,7 +1,7 @@
 {
   "name": "@crossecute/sdk",
   "version": "0.1.0",
-  "description": "Foundry and TypeScript helpers for building, simulating and submitting Crossecute operations",
+  "description": "Foundry and TypeScript helpers for building, simulating and checking Crossecute operations",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -20,7 +20,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "test": "npm run test:forge && npm run test:ts",
     "test:forge": "forge test",
     "test:ts": "vitest run",
@@ -29,8 +29,6 @@
   },
   "dependencies": {
     "@crossecute/protocol": "file:.packages/crossecute-protocol-0.1.0.tgz",
-    "@safe-global/api-kit": "5.0.4",
-    "@safe-global/protocol-kit": "8.0.11",
     "viem": "2.57.18"
   },
   "peerDependencies": {
