@@ -30,7 +30,7 @@
     "test:attest": "scripts/check-forge-attest.sh"
   },
   "dependencies": {
-    "@crossecute/protocol": "file:.packages/crossecute-protocol-0.1.0.tgz",
+    "@crossecute/protocol": "0.1.0",
     "viem": "2.57.18"
   },
   "peerDependencies": {
