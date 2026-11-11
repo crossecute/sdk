@@ -1,0 +1,48 @@
+{
+  "name": "@crossecute/sdk",
+  "version": "0.1.0",
+  "description": "Foundry and TypeScript helpers for building, simulating and submitting Crossecute operations",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./contracts/*": "./contracts/*"
+  },
+  "bin": {
+    "crossecute": "./dist/cli.js"
+  },
+  "files": [
+    "contracts",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "npm run test:forge && npm run test:ts",
+    "test:forge": "forge test",
+    "test:ts": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@crossecute/protocol": "file:.packages/crossecute-protocol-0.1.0.tgz",
+    "@safe-global/api-kit": "5.0.4",
+    "@safe-global/protocol-kit": "8.0.11",
+    "viem": "2.57.18"
+  },
+  "peerDependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "@openzeppelin/contracts-upgradeable": "5.4.0"
+  },
+  "devDependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "@openzeppelin/contracts-upgradeable": "5.4.0",
+    "@types/node": "22.19.1",
+    "forge-std": "github:foundry-rs/forge-std#v1.17.0",
+    "typescript": "5.9.3",
+    "vitest": "4.0.8"
+  }
+}
