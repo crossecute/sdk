@@ -25,7 +25,8 @@
     "test:forge": "forge test",
     "test:ts": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:attest": "scripts/check-forge-attest.sh"
   },
   "dependencies": {
     "@crossecute/protocol": "file:.packages/crossecute-protocol-0.1.0.tgz",
