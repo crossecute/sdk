@@ -42,7 +42,7 @@
     "@openzeppelin/contracts-upgradeable": "5.4.0",
     "@types/node": "22.19.1",
     "forge-std": "github:foundry-rs/forge-std#v1.17.0",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vitest": "4.0.8"
   },
   "repository": {
