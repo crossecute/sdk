@@ -1,12 +1,13 @@
 name: publish
 
-# Stages @crossecute/sdk from a tag `v<version>` through npm trusted publishing: no npm token
-# exists, and npm attaches provenance tying the tarball to this run. The `npm` environment holds
-# the job until a reviewer approves it, and the staged version stays hidden until a maintainer
-# approves it on npmjs.com with 2FA, so this run alone cannot release.
+# Stages @crossecute/sdk from a tag `npm-v<version>`, the convention crossecute/protocol uses,
+# through npm trusted publishing: no npm token exists, and npm attaches provenance tying the
+# tarball to this run. The `npm` environment holds the job until a reviewer approves it, and the
+# staged version stays hidden until a maintainer approves it on npmjs.com with 2FA, so this run
+# alone cannot release.
 on:
   push:
-    tags: ["v*"]
+    tags: ["npm-v*"]
 
 permissions:
   contents: read
@@ -36,7 +37,7 @@ jobs:
       - name: The tag names the package version
         run: |
           version=$(node -p 'require("./package.json").version')
-          [[ "$GITHUB_REF_NAME" == "v$version" ]] \
+          [[ "$GITHUB_REF_NAME" == "npm-v$version" ]] \
             || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
 
       # Install scripts run on every consumer's machine, and a file: or git dependency does not
