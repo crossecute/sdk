@@ -177,7 +177,8 @@ The signed API targets protocol revision
 [`5d7be13`](https://github.com/crossecute/protocol/commit/5d7be13e3afccb88c8a1b8a298bc56709706f76c).
 It includes `SafeTxEvidence { signedSafeTx, nestedApprovals }`, `SignedSafeTx`,
 `NestedSafeApproval`, authority records, execution/bootstrap leaves, and the current
-transmitter, receiver, guard, and `SafeBatchExecutor` ABIs. The published protocol 0.1.0
+transmitter, receiver (including nonce/authority views), transceiver, guard, and
+`SafeBatchExecutor` ABIs. The published protocol 0.1.0
 package predates these interfaces: the SDK includes a small MIT compatibility snapshot
 under `contracts/vendor/protocol135`, with original-source checksums and a refresh script.
 The existing plain planner and `crossecute check` still handle plain plans only.
@@ -269,7 +270,9 @@ for direct submissions remain at the receiver, including authenticated duplicate
 nested approvals and creation records. `validateAuthorityRecords` checks canonical first-visit
 DFS order, thresholds, kinds, cycles and reachability; `authorityGraphHash` hashes those records.
 `signedConduitSalt` computes the signed salt commitment only. Obtain receiver addresses from
-the deployed transceiver with the graph-aware prediction API, never local compiler initcode.
+the deployed transceiver with `conduitTransceiverAbi.predictReceiver(chainKey, owner, salt, graph)`,
+never local compiler initcode. `transceiverExtensionAbi` exposes `signedAuthority` and
+`predictConduit`; `transceiverBaseAbi` includes conduit creation and signed bootstrap entry points.
 
 There is no signed zkSync/Tron or LayerZero OFT path here. Provider payload sizing and gas must
 include signatures, nested verification, proof and receiver work. The inherited 200k payload /
