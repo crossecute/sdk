@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/crossecute/protocol",
+  "revision": "5d7be13e3afccb88c8a1b8a298bc56709706f76c",
+  "sources": {
+    "contracts/safe-guard/src/ICrossecuteGuard.sol": "6c30ebdd5e586e92b241631fa6cd62420e9664398deec3e3f11381bfa15914c6",
+    "contracts/safe-guard/src/SafeHashes.sol": "90b95b0604889f61fa3d5e536709ab56ed75a8ba0b39177509aca3f1b6bfa792",
+    "contracts/safe-guard/src/SafeBatchExecutor.sol": "7830a330e80edca129ba0b05e6d98e851e6fc63ee10a75067e1c5cc846ca5200",
+    "contracts/evm/src/messaging/signed/types/SafeAuthorityTypes.sol": "4a6c7027d0c051fc38e75e03d4f81377f8caf860a3ecf52d6b7a3d4b19f109d4",
+    "contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol": "55ea144101d104dd7b9979b04ae3bcb97059c043b6adf6c8377edff1b9863612",
+    "contracts/evm/src/messaging/signed/DispatchLeaves.sol": "36722e0963aafc9a9232c26a839a5fa7abf5f2935f107d1c941aec1d6065c0a3",
+    "contracts/evm/src/messaging/outbound/ISignedTransmitter.sol": "84cf49bc71f47197b7bd86cb2b9e85296770635c502557a03b47b2f6ca150b11",
+    "contracts/evm/src/messaging/inbound/ISignedReceiver.sol": "62542b0e269b9ccaece0521b7601af25e67dcf774860f23c5b1ce304f2ef00c0"
+  }
+}
