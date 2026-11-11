@@ -1,0 +1,42 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned by commit: a moved tag would change what runs against this repo.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - run: npm ci --ignore-scripts
+
+      - run: forge fmt --check
+
+      # The TypeScript tests read the files forge test writes under out/ and vectors/.
+      - run: forge test
+
+      # Fails if forge test rewrote a committed vector, which means the two languages drifted.
+      - run: git diff --exit-code vectors/
+
+      - run: npx vitest run
+
+      - run: npm run typecheck
+
+      - run: npm run build
+
+      - run: scripts/check-forge-attest.sh
