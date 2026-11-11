@@ -60,4 +60,18 @@ jobs:
       - run: npm run typecheck
 
       # prepack builds dist/ from this checkout.
-      - run: npm stage publish . --access public
+      - run: npm stage publish . --access public --json > stage.json
+
+      # `npm pack` of the tag with this npm and Node version reproduces the tarball byte for byte,
+      # so the approver can compare its digests with these before approving on npmjs.com.
+      - name: Record the staged tarball
+        run: |
+          node -e 'const [p] = Object.values(require("./stage.json"));
+            console.log(["### Staged " + p.id, "",
+              "| | |", "|---|---|",
+              "| stage id | `" + (p.stageId ?? "not returned") + "` |",
+              "| file | `" + p.filename + "` |",
+              "| shasum | `" + p.shasum + "` |",
+              "| integrity | `" + p.integrity + "` |", "",
+              "Compare with `npm pack --json` (npm 11.21.1, Node 22) on a clean checkout of `" + process.env.GITHUB_REF_NAME + "` after `npm ci --ignore-scripts`."].join("\n"))' \
+            >> "$GITHUB_STEP_SUMMARY"
