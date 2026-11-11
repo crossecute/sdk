@@ -19,7 +19,7 @@ once [crossecute/protocol#117](https://github.com/crossecute/protocol/pull/117) 
 ## Install
 
 ```bash
-npm install @crossecute/sdk @crossecute/protocol @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
+npm install @crossecute/sdk @crossecute/protocol viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
 ```
 
 Foundry remappings:
@@ -154,7 +154,8 @@ npx crossecute check out/plan.json out/safe-tx.json
 ```
 
 prints the batches, then the domain hash, message hash and `safeTxHash` a signer's device
-shows. The only runtime dependency besides `@crossecute/protocol` is viem.
+shows. Its only runtime dependency is `@crossecute/protocol`; viem is a peer dependency
+(`^2.57.18`), so a frontend keeps the single copy it already has.
 
 ## Development
 

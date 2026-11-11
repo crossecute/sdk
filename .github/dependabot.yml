@@ -1,5 +1,5 @@
-# Actions are pinned by commit and npm dependencies exactly, so nothing moves unless one of these
-# PRs is merged. The cooldown skips versions published in the last week; security updates ignore it.
+# Actions are pinned by commit, and npm dev dependencies and @crossecute/protocol exactly, so
+# nothing moves unless one of these PRs is merged. The cooldown skips versions published in the last week; security updates ignore it.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -18,3 +18,6 @@ updates:
     # The OpenZeppelin pins must equal the peer pins of @crossecute/protocol, so they move with it.
     ignore:
       - dependency-name: "@openzeppelin/*"
+      # The types follow the Node major CI and releases run on, which moves by hand.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]

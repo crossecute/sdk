@@ -4,6 +4,9 @@
   "description": "Foundry and TypeScript helpers for building, simulating and checking Crossecute operations",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -30,12 +33,12 @@
     "test:attest": "scripts/check-forge-attest.sh"
   },
   "dependencies": {
-    "@crossecute/protocol": "0.1.0",
-    "viem": "2.57.18"
+    "@crossecute/protocol": "0.1.0"
   },
   "peerDependencies": {
     "@openzeppelin/contracts": "5.4.0",
-    "@openzeppelin/contracts-upgradeable": "5.4.0"
+    "@openzeppelin/contracts-upgradeable": "5.4.0",
+    "viem": "^2.57.18"
   },
   "devDependencies": {
     "@openzeppelin/contracts": "5.4.0",
@@ -43,6 +46,7 @@
     "@types/node": "26.6.6",
     "forge-std": "github:foundry-rs/forge-std#v1.17.0",
     "typescript": "7.0.2",
+    "viem": "2.57.18",
     "vitest": "5.1.0"
   },
   "repository": {
