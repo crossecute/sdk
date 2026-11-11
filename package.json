@@ -43,7 +43,7 @@
     "@types/node": "26.6.6",
     "forge-std": "github:foundry-rs/forge-std#v1.17.0",
     "typescript": "7.0.2",
-    "vitest": "4.0.8"
+    "vitest": "5.1.0"
   },
   "repository": {
     "type": "git",
