@@ -169,5 +169,3 @@ npm run test:attest  # needs network access, jq and cast
 SDK's MultiSendCallOnly table, and the TypeScript tests check their copies against it. The
 TypeScript tests also read files the Foundry tests write under `out/`, so run `forge test`
 first.
-
-`@crossecute/protocol` is installed from `.packages/` until it is published to the registry.
