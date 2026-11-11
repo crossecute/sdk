@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
-import {HomeCall, Batch, Plan} from "./Types.sol";
+import {HomeCall, Batch, Plan, SafeTx} from "./Types.sol";
 
 /// @title PlanJson
 /// @notice The two files a plan is written as. Integers are decimal strings so no reader
@@ -47,6 +47,54 @@ library PlanJson {
             json = string.concat(json, i == 0 ? "" : ",", _batch(p.batches[i]));
         }
         json = string.concat(json, "]}");
+    }
+
+    /// @notice Safe EIP-712 typed data in the field order Forge Attest's `safe-eip712` reader
+    ///         requires for its default profile.
+    function safeTxTypedData(uint256 chainId, address safe, SafeTx memory t) internal pure returns (string memory) {
+        return string.concat(
+            '{"types":{"EIP712Domain":[{"name":"chainId","type":"uint256"},{"name":"verifyingContract","type":"address"}],',
+            '"SafeTx":[{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"},',
+            '{"name":"operation","type":"uint8"},{"name":"safeTxGas","type":"uint256"},{"name":"baseGas","type":"uint256"},',
+            '{"name":"gasPrice","type":"uint256"},{"name":"gasToken","type":"address"},{"name":"refundReceiver","type":"address"},',
+            '{"name":"nonce","type":"uint256"}]},"primaryType":"SafeTx","domain":{"chainId":"',
+            vm.toString(chainId),
+            '","verifyingContract":"',
+            vm.toString(safe),
+            '"},"message":',
+            _safeTxMessage(t),
+            "}"
+        );
+    }
+
+    function _safeTxMessage(SafeTx memory t) private pure returns (string memory) {
+        return string.concat(
+            string.concat(
+                '{"to":"',
+                vm.toString(t.to),
+                '","value":"',
+                vm.toString(t.value),
+                '","data":"',
+                vm.toString(t.data),
+                '","operation":"',
+                vm.toString(t.operation),
+                '","safeTxGas":"',
+                vm.toString(t.safeTxGas)
+            ),
+            string.concat(
+                '","baseGas":"',
+                vm.toString(t.baseGas),
+                '","gasPrice":"',
+                vm.toString(t.gasPrice),
+                '","gasToken":"',
+                vm.toString(t.gasToken),
+                '","refundReceiver":"',
+                vm.toString(t.refundReceiver),
+                '","nonce":"',
+                vm.toString(t.nonce),
+                '"}'
+            )
+        );
     }
 
     /// @param builder Adds the Transaction Builder's `operation` field.

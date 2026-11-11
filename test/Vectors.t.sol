@@ -6,6 +6,7 @@ import {Call} from "@crossecute/protocol/messaging/Call.sol";
 import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 import {ChainKey} from "@crossecute/protocol/addressing/ChainKey.sol";
 import {Erc7930} from "@crossecute/protocol/addressing/Erc7930.sol";
+import {Harness} from "./CrossecuteScript.t.sol";
 
 /// @notice Writes vectors/encoding.json from the protocol's own encoders, which the TypeScript
 ///         tests check their encoders against.
@@ -53,5 +54,22 @@ contract VectorsTest is Test {
             '"}'
         );
         vm.writeFile("vectors/encoding.json", json);
+    }
+
+    /// @notice Writes vectors/multisend.json, the MultiSendCallOnly table `ts/src/safeTx.ts`
+    ///         must repeat.
+    function test_writeMultiSendVectors() public {
+        Harness h = new Harness(address(0));
+        string[3] memory versions = ["1.3.0", "1.4.1", "1.5.0"];
+        string memory json = "{";
+        for (uint256 i; i < versions.length; ++i) {
+            (address[] memory addresses, bytes32 codeHash) = h.knownMultiSendCallOnly(versions[i]);
+            json = string.concat(json, i == 0 ? '"' : ',"', versions[i], '":{"addresses":[');
+            for (uint256 j; j < addresses.length; ++j) {
+                json = string.concat(json, j == 0 ? '"' : ',"', vm.toString(addresses[j]), '"');
+            }
+            json = string.concat(json, '],"codeHash":"', vm.toString(codeHash), '"}');
+        }
+        vm.writeFile("vectors/multisend.json", string.concat(json, "}"));
     }
 }

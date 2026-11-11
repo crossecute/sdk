@@ -5,9 +5,11 @@ import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 import {ChainKey} from "@crossecute/protocol/addressing/ChainKey.sol";
 import {Erc7930} from "@crossecute/protocol/addressing/Erc7930.sol";
 
-/// @notice The transceiver views `CrossecuteScript` reads, with one fixed prediction.
+/// @notice The transceiver views `CrossecuteScript` reads, with fixed predictions.
 contract MockTransceiver {
     address public predicted;
+    address public predictedTransmitter;
+    bytes32 public messageProvider = keccak256("provider");
     mapping(bytes32 => bool) public reportsReceiver;
 
     constructor(address predicted_) {
@@ -20,6 +22,73 @@ contract MockTransceiver {
 
     function predictReceiver(bytes32, address, bytes32) external view returns (bytes memory) {
         return abi.encodePacked(predicted);
+    }
+
+    function setPredictedTransmitter(address at) external {
+        predictedTransmitter = at;
+    }
+
+    function predictTransmitter(address, bytes32) external view returns (address) {
+        return predictedTransmitter;
+    }
+}
+
+/// @notice A registry that places one transceiver for one provider.
+contract MockRegistry {
+    address public transceiver;
+    bytes32 public provider;
+
+    constructor(address transceiver_, bytes32 provider_) {
+        transceiver = transceiver_;
+        provider = provider_;
+    }
+
+    function predictTransceiver(bytes32, bytes32 messageProvider) external view returns (address) {
+        return messageProvider == provider ? transceiver : address(0xBAD);
+    }
+}
+
+/// @notice Safe 1.4.1's `VERSION`, `nonce` and `getTransactionHash`, the hash written from
+///         Safe's own constants rather than the SDK's library.
+contract MockSafe {
+    bytes32 private constant DOMAIN_SEPARATOR_TYPEHASH =
+        0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218;
+    bytes32 private constant SAFE_TX_TYPEHASH = 0xbb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8;
+
+    string public constant VERSION = "1.4.1";
+    uint256 public nonce = 7;
+
+    receive() external payable {}
+
+    function getTransactionHash(
+        address to,
+        uint256 value,
+        bytes calldata data,
+        uint8 operation,
+        uint256 safeTxGas,
+        uint256 baseGas,
+        uint256 gasPrice,
+        address gasToken,
+        address refundReceiver,
+        uint256 nonce_
+    ) external view returns (bytes32) {
+        bytes32 domain = keccak256(abi.encode(DOMAIN_SEPARATOR_TYPEHASH, block.chainid, this));
+        bytes32 safeTx = keccak256(
+            abi.encode(
+                SAFE_TX_TYPEHASH,
+                to,
+                value,
+                keccak256(data),
+                operation,
+                safeTxGas,
+                baseGas,
+                gasPrice,
+                gasToken,
+                refundReceiver,
+                nonce_
+            )
+        );
+        return keccak256(abi.encodePacked(bytes1(0x19), bytes1(0x01), domain, safeTx));
     }
 }
 

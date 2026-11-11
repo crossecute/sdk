@@ -33,3 +33,18 @@ struct Plan {
     HomeCall[] calls;
     Batch[] batches;
 }
+
+/// @notice Safe's EIP-712 `SafeTx`, in its field order. `operation` is 0 for CALL, 1 for
+///         DELEGATECALL.
+struct SafeTx {
+    address to;
+    uint256 value;
+    bytes data;
+    uint8 operation;
+    uint256 safeTxGas;
+    uint256 baseGas;
+    uint256 gasPrice;
+    address gasToken;
+    address refundReceiver;
+    uint256 nonce;
+}

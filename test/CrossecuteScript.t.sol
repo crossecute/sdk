@@ -9,14 +9,18 @@ import {Erc7930} from "@crossecute/protocol/addressing/Erc7930.sol";
 import {TransmitterBase, IConduitTransceiver} from "@crossecute/protocol/messaging/outbound/TransmitterBase.sol";
 import {OwnableTransmitter} from "@crossecute/protocol/messaging/outbound/OwnableTransmitter.sol";
 import {CrossecuteScript} from "@crossecute/sdk/CrossecuteScript.sol";
-import {Plan} from "@crossecute/sdk/Types.sol";
-import {MockTransceiver, MockTransmitter, Counter} from "./MockConduit.sol";
+import {Plan, SafeTx} from "@crossecute/sdk/Types.sol";
+import {TransceiverExtension} from "@crossecute/protocol/messaging/transceiver/TransceiverExtension.sol";
+import {ChainRegistry} from "@crossecute/protocol/registry/ChainRegistry.sol";
+import {MockTransceiver, MockTransmitter, MockRegistry, Counter} from "./MockConduit.sol";
 
 /// @dev Every chain in one EVM: the destination is a chain id label, not a fork.
 contract Harness is CrossecuteScript {
     constructor(address transmitter_) {
         transmitter = OwnableTransmitter(payable(transmitter_));
     }
+
+    address internal knownMultiSend;
 
     function _selectHome() internal override {}
 
@@ -40,6 +44,42 @@ contract Harness is CrossecuteScript {
 
     function writePlan(Plan memory p, string memory path) external {
         _writePlan(p, path);
+    }
+
+    function verify(address registry) external {
+        _verifyConduit(registry);
+    }
+
+    function safeTx(Plan memory p, uint256 nonce) external returns (SafeTx memory t, bytes32 safeTxHash) {
+        return _safeTx(p, nonce);
+    }
+
+    function writeSafeTx(Plan memory p, uint256 nonce, string memory path) external returns (bytes32) {
+        return _writeSafeTx(p, nonce, path);
+    }
+
+    function setKnownMultiSend(address at) external {
+        knownMultiSend = at;
+    }
+
+    function knownMultiSendCallOnly(string memory version) external view returns (address[] memory, bytes32) {
+        return _knownMultiSendCallOnly(version);
+    }
+
+    function multiSendCallOnly(string memory version) external view returns (address) {
+        return _multiSendCallOnly(version);
+    }
+
+    function _knownMultiSendCallOnly(string memory version)
+        internal
+        view
+        override
+        returns (address[] memory candidates, bytes32 codeHash)
+    {
+        if (knownMultiSend == address(0)) return super._knownMultiSendCallOnly(version);
+        candidates = new address[](1);
+        candidates[0] = knownMultiSend;
+        codeHash = knownMultiSend.codehash;
     }
 }
 
@@ -83,6 +123,11 @@ contract CrossecuteScriptTest is Test {
         assertEq(m.owner.selector, t.owner.selector);
         assertEq(transceiver.predictReceiver.selector, c.predictReceiver.selector);
         assertEq(transceiver.reportsReceiver.selector, c.reportsReceiver.selector);
+        TransceiverExtension e = TransceiverExtension(payable(address(transceiver)));
+        assertEq(transceiver.messageProvider.selector, e.messageProvider.selector);
+        assertEq(transceiver.predictTransmitter.selector, e.predictTransmitter.selector);
+        ChainRegistry r = ChainRegistry(address(0));
+        assertEq(MockRegistry.predictTransceiver.selector, r.predictTransceiver.selector);
     }
 
     function test_simulatesAsTheReceiver() public {
