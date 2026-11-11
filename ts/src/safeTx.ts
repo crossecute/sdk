@@ -147,3 +147,9 @@ export function checkSafeTx(plan: Plan, envelope: SafeTxEnvelope): void {
   if (tx.value !== 0n) throw new Error("the MultiSend call carries value");
   if (tx.data !== multiSendData(plan.calls)) throw new Error("the MultiSend data is not the plan's calls");
 }
+
+/** Forge Attest / cast wallet sign EIP-712 input, with uints serialized losslessly as decimals. */
+export function serializeSafeTxTypedData({ chainId, safe, tx }: SafeTxEnvelope): string {
+  const message = Object.fromEntries(safeTxTypes.SafeTx.map(({ name }) => [name, String(tx[name])]));
+  return JSON.stringify({ types: safeTxTypes, primaryType: "SafeTx", domain: { chainId: chainId.toString(), verifyingContract: safe }, message }, null, 2) + "\n";
+}
