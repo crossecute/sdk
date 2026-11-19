@@ -490,8 +490,8 @@ than its leaf's is not caught at creation either; that destination's bootstrap f
 validation (protocol #118); building the destination compose, which the factory does; planning plain
 OFT conduits; zkSync and Tron, whose CREATE2 formulas place the conduits elsewhere.
 
-`vectors/lzoft.json`, written by `test/LzOft.t.sol`, holds the leaf hashes, roots of 1, 2, 3 and 5
-leaves, calldata, salt and address that both languages reproduce. `vectors/lzoft-protocol.json` holds
-the options selector and `Proxy` initcode hash the pinned protocol gives, and the CI `protocol-pin` job
+`vectors/lzoft.json`, written by `test/LzOft.t.sol`, holds the leaf hashes of 11 destinations, roots of
+1, 2, 3, 4, 5, 8, 9 and 11 leaves, and the calldata, salt and address of a conduit with 5, which
+both languages reproduce. `vectors/lzoft-protocol.json` holds the options selector and `Proxy` initcode hash the pinned protocol gives, and the CI `protocol-pin` job
 runs protocol's `LzOftMessage`, `LzMessage` and `LzOftConduitFactory` over `vectors/lzoft.json` with
 `scripts/check-lzoft-vectors.py`, as protocol has no literal OFT vectors of its own.
