@@ -1,0 +1,12 @@
+{
+  "revision": "3169f8cb72721330ec0af7b0235eeaf6877b9c74",
+  "optionsAttribute": {
+    "source": "contracts/evm/src/protocols/layerzero/LzMessage.sol",
+    "string": "crossecute.lz.options",
+    "selector": "0x98585a20"
+  },
+  "proxyInitCodeHash": {
+    "source": "contracts/evm/out/Proxy.sol/Proxy.json",
+    "hash": "0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6"
+  }
+}

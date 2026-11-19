@@ -6,7 +6,7 @@ The revision below is the single source for the snapshot: the script writes it t
 generated ABI header and `PROTOCOL_135_REVISION`; ts/test/protocol135.test.ts compares all of them.
 `--check` regenerates in memory and fails if any committed file differs.
 """
-import hashlib, json, pathlib, re, subprocess, sys
+import hashlib, json, pathlib, re, shutil, subprocess, sys
 
 REVISION = '3169f8cb72721330ec0af7b0235eeaf6877b9c74'
 REPOSITORY = 'https://github.com/crossecute/protocol'
@@ -34,6 +34,9 @@ ABIS = [
     ('conduitTransceiverAbi', 'evm', 'TransmitterBase', 'IConduitTransceiver'),
     ('crossecuteGuardAbi', 'safe-guard', 'ICrossecuteGuard', 'ICrossecuteGuard'),
     ('safeBatchExecutorAbi', 'safe-guard', 'SafeBatchExecutor', 'SafeBatchExecutor'),
+    ('lzOftConduitFactoryAbi', 'evm', 'LzOftConduitFactory', 'LzOftConduitFactory'),
+    ('lzOftTransmitterAbi', 'evm', 'LzOftTransmitter', 'LzOftTransmitter'),
+    ('lzOftReceiverAbi', 'evm', 'LzOftReceiver', 'LzOftReceiver'),
 ]
 # Functions and events each trimmed ABI keeps: what the builders and the README use, plus the signed-flow
 # views. Inherited access-control, ownership and admin members are dropped. Every custom error is kept so
@@ -57,6 +60,21 @@ MEMBERS = {
     'transceiverExtensionAbi': {
         'functions': ['predictConduit', 'predictTransmitter', 'conduitSalt', 'signedAuthority'],
         'events': ['ConduitCreated', 'BootstrapSent'],
+    },
+    # The OFT conduit's own members. Its signed entry points are signedTransmitterAbi's and signedReceiverAbi's.
+    'lzOftConduitFactoryAbi': {
+        'functions': ['createTransmitter', 'predictConduit', 'conduitSalt', 'predictReceiver', 'bootstrapRoute',
+                      'destinationOf', 'isSigned', 'signedConduitBootstrap', 'PROXY_INIT_CODE_HASH', 'localChainKey',
+                      'SIGNED_BOOTSTRAP'],
+        'events': ['TransmitterCreated', 'ReceiverCreated', 'SignedConduitCreated'],
+    },
+    'lzOftTransmitterAbi': {
+        'functions': ['homeOft', 'destinationOf', 'supportsAttribute', 'LZ_OPTIONS_ATTRIBUTE'],
+        'events': [],
+    },
+    'lzOftReceiverAbi': {
+        'functions': ['homeOft', 'localOft'],
+        'events': [],
     },
     'transceiverBaseAbi': {
         'functions': ['predictReceiver', 'createTransmitter', 'bootstrap', 'quoteBootstrap', 'bootstrapSigned',
@@ -83,8 +101,22 @@ def trim(export, abi):
 # protocol's own encodings: (id in the protocol file, key in vectors/authority.json).
 VECTORS = [('eoa-select', 'single'), ('multilevel-shared', 'shared')]
 VECTOR_SOURCE = 'docs/vectors/safe-authority-updates-109.json'
+
+# Values the OFT builders repeat, derived here from the pinned protocol so the Solidity and TypeScript
+# constants are tested against protocol itself: the options attribute selector from the string literal in
+# LzMessage.sol, and the initcode hash every conduit address is CREATE2'd from, from Proxy's artifact.
+LZ_MESSAGE = 'contracts/evm/src/protocols/layerzero/LzMessage.sol'
+PROXY_ARTIFACT = 'contracts/evm/out/Proxy.sol/Proxy.json'
+OFT_PINS = 'vectors/lzoft-protocol.json'
 IMPORT = re.compile(r'"(?:@crossecute/safe-guard/|src/messaging/signed/types/|\.\./signed/types/)([^"/]+)"')
 IMPORT_AUTHORITY = re.compile(r'"src/messaging/authority/([^"/]+)"')
+
+
+def keccak256(data):
+    """Keccak-256 through Foundry's `cast`, which hashlib has no digest for. CI installs Foundry; locally
+    `cast` is on PATH or in ~/.foundry/bin."""
+    cast = shutil.which('cast') or str(pathlib.Path.home() / '.foundry/bin/cast')
+    return subprocess.check_output([cast, 'keccak', '0x' + data.hex()], text=True).strip().removeprefix('0x')
 
 
 def sha256(text):
@@ -104,6 +136,30 @@ def vectors(protocol):
     return json.dumps(picked, indent=2) + '\n'
 
 
+def committed_source(protocol, path):
+    original = (protocol / path).read_text()
+    committed = subprocess.check_output(['git', '-C', str(protocol), 'show', REVISION + ':' + path], text=True)
+    if original != committed:
+        raise SystemExit('Refusing modified protocol source: ' + path)
+    return original
+
+
+def oft_pins(protocol):
+    literal = re.search(r'OPTIONS_ATTRIBUTE = bytes4\(keccak256\("([^"]+)"\)\)', committed_source(protocol, LZ_MESSAGE))
+    if literal is None:
+        raise SystemExit(LZ_MESSAGE + ': no OPTIONS_ATTRIBUTE literal')
+    proxy = json.loads((protocol / PROXY_ARTIFACT).read_text())['bytecode']
+    if proxy['linkReferences']:
+        raise SystemExit('Proxy initcode has unlinked libraries')
+    initcode = bytes.fromhex(proxy['object'].removeprefix('0x'))
+    return json.dumps({
+        'revision': REVISION,
+        'optionsAttribute': {'source': LZ_MESSAGE, 'string': literal.group(1),
+                             'selector': '0x' + keccak256(literal.group(1).encode())[:8]},
+        'proxyInitCodeHash': {'source': PROXY_ARTIFACT, 'hash': '0x' + keccak256(initcode)},
+    }, indent=2) + '\n'
+
+
 def generate(protocol):
     head = subprocess.check_output(['git', '-C', str(protocol), 'rev-parse', 'HEAD'], text=True).strip()
     if head != REVISION:
@@ -120,6 +176,7 @@ def generate(protocol):
         manifest['sources'][source] = sha256(original)
         manifest['vendored'][name] = sha256(text)
     outputs[root / 'vectors/authority.json'] = vectors(protocol)
+    outputs[root / OFT_PINS] = oft_pins(protocol)
     outputs[vendor / 'manifest.json'] = json.dumps(manifest, indent=2) + '\n'
     header = f'// Generated by scripts/sync-protocol135.py; protocol {REVISION}.\n'
     abi = header + f'export const PROTOCOL_135_REVISION = "{REVISION}";\n'

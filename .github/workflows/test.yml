@@ -42,7 +42,8 @@ jobs:
       - run: scripts/check-forge-attest.sh
 
   # The pin is a commit on protocol's #135 branch, not a merge commit. This fails if the vendored
-  # snapshot, generated ABIs or authority vectors differ from what that commit produces.
+  # snapshot, generated ABIs, authority vectors or OFT pins differ from what that commit produces, or the OFT
+  # vectors differ from what its contracts compute.
   protocol-pin:
     runs-on: ubuntu-latest
     steps:
@@ -71,3 +72,8 @@ jobs:
         working-directory: protocol/contracts/safe-guard
 
       - run: python3 scripts/sync-protocol135.py --check protocol
+
+      # Runs protocol's LzOftMessage, LzMessage and LzOftConduitFactory over vectors/lzoft.json; protocol has no
+      # literal OFT vectors to copy. Adds and removes a script in the disposable checkout. `forge script` compiles
+      # only what the script imports, so the submodules above suffice: about 1 s after the src builds, 13 s alone.
+      - run: python3 scripts/check-lzoft-vectors.py protocol
