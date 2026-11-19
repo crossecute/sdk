@@ -11,7 +11,7 @@ import { lzOftConduitFactoryAbi, signedTransmitterAbi } from "../src/signedAbi.j
 
 const read = (path: string) => JSON.parse(readFileSync(new URL(path, new URL("../../", import.meta.url)), "utf8"));
 const vector = read("vectors/lzoft.json") as {
-  options: Hex; optionsAttribute: Hex; proxyInitCodeHash: Hex; roots: Record<string, Hex>; factory: Address; createData: Hex; conduitSalt: Hex; conduit: Address;
+  options: Hex; optionsAttribute: Hex; proxyInitCodeHash: Hex; conduitLeaves: number; roots: Record<string, Hex>; factory: Address; createData: Hex; conduitSalt: Hex; conduit: Address;
   destinations: { chainId: string; chainKey: Hex; eid: number; oft: Address; leafHash: Hex }[];
   home: { owner: Address; salt: Hex; chainId: string; chainKey: Hex; eid: number; oft: Address };
 };
@@ -19,7 +19,8 @@ const pins = read("vectors/lzoft-protocol.json");
 const leaves: LzOftLeaf[] = vector.destinations.map((d) => ({ chainKey: d.chainKey, eid: d.eid, oft: d.oft }));
 const home = { chainKey: vector.home.chainKey, eid: vector.home.eid };
 const fields = { owner: vector.home.owner, salt: vector.home.salt, homeChainKey: vector.home.chainKey, homeEid: vector.home.eid, homeOft: vector.home.oft };
-const threeRoot = lzOftRoot(leaves.slice(0, 3), home);
+const conduitLeaves = leaves.slice(0, vector.conduitLeaves);
+const conduitRoot = lzOftRoot(conduitLeaves, home);
 
 describe("OFT constants against protocol", () => {
   it("repeat the selector and Proxy initcode hash protocol's sources and artifacts give", () => {
@@ -102,18 +103,18 @@ describe("leaf checks", () => {
 
 describe("conduit creation and address against the Solidity builders", () => {
   it("encodes the factory's createTransmitter call", () => {
-    const data = createLzOftTransmitterData(fields.salt, fields.homeOft, leaves.slice(0, 3));
+    const data = createLzOftTransmitterData(fields.salt, fields.homeOft, conduitLeaves);
     expect(data).toBe(vector.createData);
     const decoded = decodeFunctionData({ abi: lzOftConduitFactoryAbi, data });
     expect(decoded.functionName).toBe("createTransmitter");
-    expect(decoded.args).toEqual([fields.salt, getAddress(fields.homeOft), leaves.slice(0, 3).map((l) => ({ ...l, oft: getAddress(l.oft) }))]);
+    expect(decoded.args).toEqual([fields.salt, getAddress(fields.homeOft), conduitLeaves.map((l) => ({ ...l, oft: getAddress(l.oft) }))]);
   });
   it("derives the salt and the address from the six fields and the factory", () => {
-    expect(lzOftConduitSalt({ ...fields, destRoot: threeRoot })).toBe(vector.conduitSalt);
-    expect(predictLzOftConduit(vector.factory, { ...fields, destRoot: threeRoot }, vector.proxyInitCodeHash).toLowerCase()).toBe(vector.conduit.toLowerCase());
+    expect(lzOftConduitSalt({ ...fields, destRoot: conduitRoot })).toBe(vector.conduitSalt);
+    expect(predictLzOftConduit(vector.factory, { ...fields, destRoot: conduitRoot }, vector.proxyInitCodeHash).toLowerCase()).toBe(vector.conduit.toLowerCase());
   });
   it("moves the address with each bound field, the factory and the initcode hash", () => {
-    const base = { ...fields, destRoot: threeRoot };
+    const base = { ...fields, destRoot: conduitRoot };
     const at = predictLzOftConduit(vector.factory, base, vector.proxyInitCodeHash);
     const other = "0x0000000000000000000000000000000000000001" as Address;
     for (const changed of [
@@ -125,12 +126,12 @@ describe("conduit creation and address against the Solidity builders", () => {
   });
   it("takes the initcode hash explicitly and requires 32 bytes", () => {
     expect(vector.proxyInitCodeHash).toBe(LZ_OFT_PROXY_INIT_CODE_HASH);
-    expect(() => predictLzOftConduit(vector.factory, { ...fields, destRoot: threeRoot }, "0x1234")).toThrow("32 bytes");
-    expect(() => (predictLzOftConduit as (...a: unknown[]) => unknown)(vector.factory, { ...fields, destRoot: threeRoot })).toThrow("32 bytes");
+    expect(() => predictLzOftConduit(vector.factory, { ...fields, destRoot: conduitRoot }, "0x1234")).toThrow("32 bytes");
+    expect(() => (predictLzOftConduit as (...a: unknown[]) => unknown)(vector.factory, { ...fields, destRoot: conduitRoot })).toThrow("32 bytes");
   });
   it("wraps the call in the owner Safe's CALL to the factory", () => {
     const owner = vector.home.owner;
-    const envelope = lzOftCreateTx(BigInt(vector.home.chainId), owner, vector.factory, 4n, fields.salt, fields.homeOft, leaves.slice(0, 3));
+    const envelope = lzOftCreateTx(BigInt(vector.home.chainId), owner, vector.factory, 4n, fields.salt, fields.homeOft, conduitLeaves);
     expect(envelope).toMatchObject({ chainId: BigInt(vector.home.chainId), safe: owner, tx: { to: vector.factory, value: 0n, nonce: 4n, operation: 0, data: vector.createData } });
   });
 });

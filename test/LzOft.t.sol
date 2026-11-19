@@ -43,18 +43,20 @@ contract LzOftTest is Test {
     bytes32 constant SALT = keccak256("oft-salt");
     uint256 constant HOME_CHAIN_ID = 252;
     uint32 constant HOME_EID = 30255;
-    uint256 constant DESTINATIONS = 5;
+    uint256 constant DESTINATIONS = 11;
+    /// @dev Destinations the vector's conduit is created with, an odd count so a node is carried up a level.
+    uint256 constant CONDUIT_LEAVES = 5;
     bytes32 constant PINNED = LzOft.PROXY_INIT_CODE_HASH;
 
     function _chainIds() internal pure returns (uint256[DESTINATIONS] memory) {
-        return [uint256(10), 8453, 42_161, 137, 56];
+        return [uint256(10), 8453, 42_161, 137, 56, 1, 43_114, 59_144, 534_352, 81_457, 7_777_777];
     }
 
     function _eids() internal pure returns (uint32[DESTINATIONS] memory) {
-        return [uint32(30111), 30184, 30110, 30109, 30102];
+        return [uint32(30111), 30184, 30110, 30109, 30102, 30101, 30106, 30183, 30214, 30243, 30195];
     }
 
-    /// @dev The five destinations in ascending `chainKey` order, as the factory requires.
+    /// @dev The destinations in ascending `chainKey` order, as the factory requires.
     function _sorted() internal pure returns (ILzOftCreate.Leaf[] memory leaves, uint256[] memory chainIds) {
         leaves = new ILzOftCreate.Leaf[](DESTINATIONS);
         chainIds = new uint256[](DESTINATIONS);
@@ -222,7 +224,8 @@ contract LzOftTest is Test {
     }
 
     function _rootsJson(ILzOftCreate.Leaf[] memory leaves) internal pure returns (string memory out) {
-        uint256[4] memory counts = [uint256(1), 2, 3, 5];
+        // Shapes whose levels carry an odd node up: 3, 5, 9 and 11 at one or more levels, and a full tree of 8.
+        uint256[8] memory counts = [uint256(1), 2, 3, 4, 5, 8, 9, 11];
         out = "{";
         for (uint256 i; i < counts.length; ++i) {
             out = string.concat(
@@ -255,14 +258,16 @@ contract LzOftTest is Test {
         );
     }
 
-    /// @dev The conduit of the first three destinations, which `LzOft.root` checks against the home too.
+    /// @dev The conduit of the first `CONDUIT_LEAVES` destinations, which `LzOft.root` checks against the home too.
     function _conduitJson(ILzOftCreate.Leaf[] memory leaves, bytes32 homeKey) internal pure returns (string memory) {
-        ILzOftCreate.Leaf[] memory three = _prefix(leaves, 3);
-        bytes32 destRoot = LzOft.root(three, homeKey, HOME_EID);
+        ILzOftCreate.Leaf[] memory used = _prefix(leaves, CONDUIT_LEAVES);
+        bytes32 destRoot = LzOft.root(used, homeKey, HOME_EID);
         return string.concat(
             '"createData":"',
-            vm.toString(LzOft.createTransmitterData(SALT, HOME_OFT, three)),
-            '","proxyInitCodeHash":"',
+            vm.toString(LzOft.createTransmitterData(SALT, HOME_OFT, used)),
+            '","conduitLeaves":',
+            vm.toString(CONDUIT_LEAVES),
+            ',"proxyInitCodeHash":"',
             vm.toString(PINNED),
             '","conduitSalt":"',
             vm.toString(LzOft.conduitSalt(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot)),
