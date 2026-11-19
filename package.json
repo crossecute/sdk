@@ -4,6 +4,7 @@
   "description": "Foundry and TypeScript helpers for building, simulating and checking Crossecute operations",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=22.12"
   },

@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/crossecute/protocol",
+  "revision": "3169f8cb72721330ec0af7b0235eeaf6877b9c74",
+  "sources": {
+    "contracts/safe-guard/src/ICrossecuteGuard.sol": "6c30ebdd5e586e92b241631fa6cd62420e9664398deec3e3f11381bfa15914c6",
+    "contracts/safe-guard/src/SafeHashes.sol": "90b95b0604889f61fa3d5e536709ab56ed75a8ba0b39177509aca3f1b6bfa792",
+    "contracts/safe-guard/src/SafeBatchExecutor.sol": "7830a330e80edca129ba0b05e6d98e851e6fc63ee10a75067e1c5cc846ca5200",
+    "contracts/evm/src/messaging/signed/types/SafeAuthorityTypes.sol": "4a6c7027d0c051fc38e75e03d4f81377f8caf860a3ecf52d6b7a3d4b19f109d4",
+    "contracts/evm/src/messaging/signed/types/SignedDispatchTypes.sol": "cf5f7f54068615b4e4871a54c3c11a2e5d6d8838bf0aa51c6c67648ee77c52fe",
+    "contracts/evm/src/messaging/authority/AuthorityGraph.sol": "4308da3b1a7c2dd20cfec8300a32e8533b83e5560031ec12830dcdd2c7e7fa9c",
+    "contracts/evm/src/messaging/signed/DispatchLeaves.sol": "4d3d4f7f19f69a09a1df02c07c0eda0281a6a70a767b1cccf2ae58d04541c4a1",
+    "contracts/evm/src/messaging/outbound/ISignedTransmitter.sol": "677a7172954cb26f12945f9bcf40f20831d7bbfc746b615e773f8ad2746def56",
+    "contracts/evm/src/messaging/inbound/ISignedReceiver.sol": "537cf65a228ffa974e97b6cfdead9db3c196d9a0d94d9b1e999282c5e0fe6b0d"
+  },
+  "vendored": {
+    "ICrossecuteGuard.sol": "6c30ebdd5e586e92b241631fa6cd62420e9664398deec3e3f11381bfa15914c6",
+    "SafeHashes.sol": "90b95b0604889f61fa3d5e536709ab56ed75a8ba0b39177509aca3f1b6bfa792",
+    "SafeBatchExecutor.sol": "7830a330e80edca129ba0b05e6d98e851e6fc63ee10a75067e1c5cc846ca5200",
+    "SafeAuthorityTypes.sol": "4a6c7027d0c051fc38e75e03d4f81377f8caf860a3ecf52d6b7a3d4b19f109d4",
+    "SignedDispatchTypes.sol": "56c79d286126491cbab6400b5526e188c4594ddf00b18ab127ab969fd8a36ff4",
+    "AuthorityGraph.sol": "ba2363e25f668ae5d0dc86cf11795fe6be298850719e9ef87c75d2bdad2cb141",
+    "DispatchLeaves.sol": "29f34df162e9c4703589b4b45a8f7780464a4d80c39f157bd3537f2a27b6e0e4",
+    "ISignedTransmitter.sol": "27d35af1ca1ef5773a1d70b4115ecec09ed9f153b60a8794d868e0deb935f389",
+    "ISignedReceiver.sol": "99062aa40ae879998d33c46c3de8996741cbbed02284ef9c061bbe96386096c7"
+  }
+}

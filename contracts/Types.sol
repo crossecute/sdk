@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import {SafeTx} from "./vendor/protocol135/ICrossecuteGuard.sol";
+
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 
 /// @notice A call the conduit's owner makes on the home chain.
@@ -32,19 +34,4 @@ struct Plan {
     uint256 fee;
     HomeCall[] calls;
     Batch[] batches;
-}
-
-/// @notice Safe's EIP-712 `SafeTx`, in its field order. `operation` is 0 for CALL, 1 for
-///         DELEGATECALL.
-struct SafeTx {
-    address to;
-    uint256 value;
-    bytes data;
-    uint8 operation;
-    uint256 safeTxGas;
-    uint256 baseGas;
-    uint256 gasPrice;
-    address gasToken;
-    address refundReceiver;
-    uint256 nonce;
 }
