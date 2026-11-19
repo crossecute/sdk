@@ -6,7 +6,7 @@ The revision below is the single source for the snapshot: the script writes it t
 generated ABI header and `PROTOCOL_135_REVISION`; ts/test/protocol135.test.ts compares all of them.
 `--check` regenerates in memory and fails if any committed file differs.
 """
-import hashlib, json, pathlib, re, subprocess, sys
+import hashlib, json, pathlib, re, shutil, subprocess, sys
 
 REVISION = '3169f8cb72721330ec0af7b0235eeaf6877b9c74'
 REPOSITORY = 'https://github.com/crossecute/protocol'
@@ -113,38 +113,10 @@ IMPORT_AUTHORITY = re.compile(r'"src/messaging/authority/([^"/]+)"')
 
 
 def keccak256(data):
-    """Keccak-256 (Ethereum's, not SHA3-256), as hashlib has no such digest."""
-    mask, rate = (1 << 64) - 1, 136
-    rotations = [[0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61], [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]]
-    constants = [0x1, 0x8082, 0x800000000000808a, 0x8000000080008000, 0x808b, 0x80000001, 0x8000000080008081,
-                 0x8000000000008009, 0x8a, 0x88, 0x80008009, 0x8000000a, 0x8000808b, 0x800000000000008b,
-                 0x8000000000008089, 0x8000000000008003, 0x8000000000008002, 0x8000000000000080, 0x800a,
-                 0x800000008000000a, 0x8000000080008081, 0x8000000000008080, 0x80000001, 0x8000000080008008]
-
-    def rol(x, n):
-        return ((x << n) | (x >> (64 - n))) & mask if n else x
-
-    state = [[0] * 5 for _ in range(5)]
-    padded = bytearray(data) + b'\x01'
-    padded += b'\x00' * (-len(padded) % rate)
-    padded[-1] |= 0x80
-    for block in range(0, len(padded), rate):
-        for i in range(rate // 8):
-            state[i % 5][i // 5] ^= int.from_bytes(padded[block + 8 * i:block + 8 * i + 8], 'little')
-        for rc in constants:
-            c = [state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4] for x in range(5)]
-            d = [c[(x - 1) % 5] ^ rol(c[(x + 1) % 5], 1) for x in range(5)]
-            state = [[state[x][y] ^ d[x] for y in range(5)] for x in range(5)]
-            b = [[0] * 5 for _ in range(5)]
-            for x in range(5):
-                for y in range(5):
-                    b[y][(2 * x + 3 * y) % 5] = rol(state[x][y], rotations[x][y])
-            state = [[b[x][y] ^ (~b[(x + 1) % 5][y] & b[(x + 2) % 5][y]) & mask for y in range(5)] for x in range(5)]
-            state[0][0] ^= rc
-    return b''.join(state[i % 5][i // 5].to_bytes(8, 'little') for i in range(4))
-
-
-assert keccak256(b'').hex() == 'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470'
+    """Keccak-256 through Foundry's `cast`, which hashlib has no digest for. CI installs Foundry; locally
+    `cast` is on PATH or in ~/.foundry/bin."""
+    cast = shutil.which('cast') or str(pathlib.Path.home() / '.foundry/bin/cast')
+    return subprocess.check_output([cast, 'keccak', '0x' + data.hex()], text=True).strip().removeprefix('0x')
 
 
 def sha256(text):
@@ -183,8 +155,8 @@ def oft_pins(protocol):
     return json.dumps({
         'revision': REVISION,
         'optionsAttribute': {'source': LZ_MESSAGE, 'string': literal.group(1),
-                             'selector': '0x' + keccak256(literal.group(1).encode())[:4].hex()},
-        'proxyInitCodeHash': {'source': PROXY_ARTIFACT, 'hash': '0x' + keccak256(initcode).hex()},
+                             'selector': '0x' + keccak256(literal.group(1).encode())[:8]},
+        'proxyInitCodeHash': {'source': PROXY_ARTIFACT, 'hash': '0x' + keccak256(initcode)},
     }, indent=2) + '\n'
 
 
