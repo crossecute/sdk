@@ -45,12 +45,22 @@ library SignedDispatch {
         pure
         returns (bytes32 treeRoot, bytes32[] memory siblings)
     {
-        if (leaves.length == 0) revert NoLeaves();
-        if (index >= leaves.length) revert IndexOutOfRange();
         bytes32[] memory level = new bytes32[](leaves.length);
         for (uint256 i; i < leaves.length; ++i) {
             level[i] = keccak256(abi.encode(keccak256(leaves[i])));
         }
+        return treeOfHashes(level, index);
+    }
+
+    /// @notice `tree` over leaf hashes already computed. `level` is overwritten level by level, so the caller
+    ///         passes a copy it no longer needs.
+    function treeOfHashes(bytes32[] memory level, uint256 index)
+        internal
+        pure
+        returns (bytes32 treeRoot, bytes32[] memory siblings)
+    {
+        if (level.length == 0) revert NoLeaves();
+        if (index >= level.length) revert IndexOutOfRange();
         siblings = new bytes32[](64);
         uint256 depth;
         uint256 count = level.length;
