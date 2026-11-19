@@ -281,8 +281,8 @@ live provider cap, fee, simulation result, signature quorum or destination state
 
 ### Foundry signed builders
 
-`SignedDispatch` supplies the same field encodings, Merkle root, standalone/bootstrap/root
-calldata, wire bodies, relay and direct-submission calldata. Import `ExecutionLeaf`,
+`SignedDispatch` supplies the same field encodings, Merkle root and per-leaf proofs
+(`SignedDispatch.proof`), standalone/bootstrap/root calldata, wire bodies, relay and direct-submission calldata. Import `ExecutionLeaf`,
 `BootstrapLeaf`, `SafeTxEvidence`, and `NestedSafeApproval` from
 `@crossecute/sdk/vendor/protocol135/SignedDispatchTypes.sol`; `SafeTx` in `Types.sol` re-exports
 the shared guard type. Build individual signed transactions with
@@ -294,3 +294,31 @@ Simulate receiver calls and full provider entry points against pinned forks sepa
 `test/SignedDispatch.t.sol` writes committed Solidity reference vectors for hashes, nested
 wire encodings, calldata and atomic batches. TypeScript verifies parity against those vectors,
 plus odd tree sizes, tampering, replay identities, authority graphs and source nonce order.
+`test/MerklePackage.t.sol` writes `vectors/merkle.json` (trees of 1, 2, 3, 5, 8 and 9 leaves and
+a mixed execution/bootstrap tree) and checks the protocol guard's cast-computed three-leaf root and
+leaf hashes. TypeScript builds the same trees and compares every encoded leaf, hash, root and proof.
+
+### Merkle package and delivery bundle
+
+`buildMerklePackage(leaves, receiverNonces)` produces the root, leaf hashes and proofs that the
+guard's `publishLeaves` records for the same ordered leaves, as a `MerklePackage` with
+`version: 1`. `merklePublishData(pkg)` is the `publishLeaves` calldata; each entry's `hash` is the
+indexed hash of its `LeafPublished` event, and `registerRootData(pkg.root)` is the owner Safe's
+registration. A plan is rejected when it holds a duplicate leaf, two different batches at one
+receiver nonce (the receiver's conflicting-batch revert), a nonce below the receiver's observed
+`nextNonce`, or receiver nonces that are missing, repeated or unused. One batch at one nonce with
+different attributes is allowed, as the receiver records execution IDs without attributes.
+`verifyMerklePackage` rebuilds the tree from the leaves and checks every recorded root, hash and
+proof; the leaf order is part of the package.
+
+`buildDeliveryBundle({ envelope, signatures, nestedApprovals, merkle })` records the exact Safe
+transaction, Safe address, home chain ID, signature blob and nested approvals, with the package for
+a `registerRoot` transaction. `serializeDeliveryBundle` and `parseDeliveryBundle` use a strict JSON
+layout (decimal-string integers, exact field sets, `version: 1`) and verify on both sides.
+`verifyDeliveryBundle` needs no signer or RPC: it recomputes the Safe transaction hash, requires a
+CALL whose calldata is exactly one `sendMessage` (standalone) or `registerRoot` of the package
+root, rebuilds the tree, and rejects duplicate `(childSafe, messageHash)` approvals. Signatures,
+thresholds and nested approval contents are verified by the receiver, not here.
+`relayLeafFromBundle`, `submitLeafFromBundle` and `submitMessageFromBundle` produce the delivery
+calldata, so an independent submitter needs only the bundle. Bootstrap leaves are carried in the
+tree but delivered with `signedBootstrapData`. Unknown bundle or package versions are rejected.
