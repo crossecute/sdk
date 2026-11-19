@@ -27,5 +27,9 @@ git -C /path/to/protocol checkout "$(jq -r .revision contracts/vendor/protocol13
 python3 scripts/sync-protocol135.py --check /path/to/protocol
 ```
 
+`python3 scripts/check-lzoft-vectors.py /path/to/protocol` then runs protocol's LayerZero OFT contracts over
+`vectors/lzoft.json`. It writes a script into that checkout's `contracts/evm/script` and removes it, so
+use a disposable checkout or a copy; CI runs it in the same job.
+
 Update the pin deliberately when adopting a new protocol revision, and update the revision
 link in the root README; replace this snapshot with package imports after publication.

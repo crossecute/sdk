@@ -13,7 +13,8 @@ belong to Forge Attest, `cast wallet sign`, or the Safe UI.
 
 The Foundry planner covers plain `sendMessage` and `bootstrap` from an owner Safe or EOA.
 The signed builders support [protocol PR #135](https://github.com/crossecute/protocol/pull/135):
-standalone Safe sends, published Merkle trees, signed bootstrap, leaf relay and direct delivery.
+standalone Safe sends, published Merkle trees, signed bootstrap, leaf relay and direct delivery, and
+creating and addressing [LayerZero OFT conduits](#layerzero-oft-conduits).
 Authority updates (atomic execution, witness retrieval, catch-up planning) are tracked in
 [sdk#14](https://github.com/crossecute/sdk/issues/14).
 See [Safe-signed dispatch](#safe-signed-dispatch-protocol-pr-135) for the pinned revision and workflow.
@@ -190,11 +191,12 @@ The existing plain planner and `crossecute check` still handle plain plans only.
 
 ### Authority model
 
-A signed conduit and a plain conduit share one salt, `keccak256(abi.encode(owner, userSalt,
-homeChainKey))`, so no address commits to the owner's authority and an ownership change moves
-no address. The mode is fixed when the transmitter is created. Obtain addresses from the
-deployed transceiver (`predictConduit`, `predictReceiver(chainKey, owner, salt)`), never from
-local compiler initcode. `transceiverExtensionAbi.signedAuthority(owner)` returns the owner's
+A signed conduit and a plain conduit of one provider share one salt, `keccak256(abi.encode(owner,
+userSalt, homeChainKey))` for the registry providers and the six-field salt of
+[LayerZero OFT conduits](#layerzero-oft-conduits) for that binding, so no address commits to the
+owner's authority and an ownership change moves no address. The mode is fixed when the transmitter is
+created. Obtain addresses from the deployed transceiver (`predictConduit`, `predictReceiver(chainKey,
+owner, salt)`) or, for an OFT conduit, the deployed factory, never from local compiler initcode. `transceiverExtensionAbi.signedAuthority(owner)` returns the owner's
 live records and is only the creation-time mode probe; no creation records are stored.
 
 The owner Safe activates its authority with the source guard, which stores the selected
@@ -329,7 +331,8 @@ and the source transceiver for it. A failed source transport reverts the Safe's 
 execution and the Safe can sign another; a second delivery to an existing receiver reverts.
 Bootstrap carries no historical updates.
 
-There is no signed zkSync/Tron or LayerZero OFT path here. Provider payload sizing and gas must
+There is no signed zkSync/Tron path here; signed LayerZero OFT conduits are covered by [their own
+section](#layerzero-oft-conduits). Provider payload sizing and gas must
 include signatures, nested verification, proof and receiver work. The inherited 200k payload /
 1m bootstrap defaults do not cover general signed delivery. These encoders do not certify a
 live provider cap, fee, simulation result, signature quorum or destination state.
@@ -384,3 +387,107 @@ functions return lowercase hex and checksummed addresses, the form the parsers r
 thresholds and nested approval contents are verified by the receiver, not here.
 `relayLeafFromBundle`, `submitLeafFromBundle` and `submitMessageFromBundle` produce the delivery
 calldata, so an independent submitter needs only the bundle. Unknown bundle or package versions are rejected.
+
+### LayerZero OFT conduits
+
+The `layerzero-oft` binding sends every message through an OFT its own team operates, from the
+conduit itself, and a factory with no owner creates the conduit at home and its receiver on each
+destination. Its rules are protocol's
+[`docs/layerzero-oft-spec.md`](https://github.com/crossecute/protocol/blob/3169f8cb72721330ec0af7b0235eeaf6877b9c74/docs/layerzero-oft-spec.md)
+(L1 to L5 and the OFT prerequisites O1 to O7). The signed entry points are the ones of the sections
+above and are unchanged: `signedSendData`, `registerRootData`, `relayLeafData`, `submitLeafData`,
+`submitMessageData`, `signedBootstrapData`, the Merkle package and the delivery bundle. The OFT
+transmitter implements the same signed bootstrap hooks as every signed transmitter, and the factory's
+`signedConduitBootstrap` builds the destination envelope on chain from the body
+`signedBootstrapData` encodes. What is OFT specific is the options attribute and conduit creation.
+
+```ts
+import {
+  chainKey, encodeCalls, encodeEvm, encodeEvmChain, lzOftCreateTx, lzOftLeaves, lzOftRoot, lzOptionsAttribute,
+  predictLzOftConduit, signedBootstrapData, signedSendData,
+} from "@crossecute/sdk";
+
+// Peers of the home OFT, one per destination; the factory reads them, the SDK does not.
+const home = { chainKey: chainKey(homeChainId), eid: homeEid };
+const leaves = lzOftLeaves(destinations, home); // [{ chainId, eid, oft }], sorted by chain key
+const destRoot = lzOftRoot(leaves, home);
+const conduit = predictLzOftConduit(factory, { owner: ownerSafe, salt, homeChainKey: home.chainKey, homeEid, homeOft, destRoot });
+// Compare with `predictConduit` on the deployed factory (lzOftConduitFactoryAbi) before relying on it.
+const creation = lzOftCreateTx(homeChainId, ownerSafe, factory, safeNonce, salt, homeOft, leaves); // Safe CALL
+
+const attributes = [lzOptionsAttribute(rawOptions)];
+const send = signedSendData(encodeEvm(destinationChainId, conduit), encodeCalls(calls), attributes);
+const bootstrap = signedBootstrapData(encodeEvmChain(destinationChainId), body, ownerSafe, attributes);
+```
+
+**The one attribute.** The conduit accepts only `abi.encodePacked(OPTIONS_ATTRIBUTE, rawOptions)` with
+`OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"))`, and at most one attribute per send.
+`lzOptionsAttribute(rawOptions)` and the Foundry `LzOft.optionsAttribute(rawOptions)` build it. The raw
+options replace the default lzCompose option whole, so they must carry the compose gas the destination
+needs; the SDK does not validate their content. Any other attribute reverts.
+
+**Creation.** `createTransmitter(salt, homeOft, leaves)` is called by the owner Safe, which becomes the
+conduit's owner. Each leaf is `{ chainKey, eid, oft }`: a destination, its endpoint id and the home
+OFT's peer there. The factory hashes each leaf twice (`lzOftLeafHash`), builds the destination root
+over the leaf hashes in the order given, and binds `keccak256(abi.encode(owner, salt, homeChainKey,
+homeEid, homeOft, destRoot))` into the CREATE2 salt, so the address changes with any of them. Leaves
+must be in strictly ascending `chainKey` order, which is a hash order and not the chain id order, and a
+repeated chain key is refused. `lzOftLeaves` sorts by chain id for you; `lzOftRoot`,
+`checkLzOftLeaves` and `createLzOftTransmitterData` reject unsorted input with the factory's
+`LeavesNotSorted(index)`, and also reject no leaves, a zero eid or OFT, and, given the home, a leaf for
+the home chain or the home's eid. The Foundry `LzOft` library offers the same checks, root, calldata and
+prediction (`LzOft.root`, `createTransmitterData`, `predictConduit`) for leaves already in order.
+Destinations are fixed at creation: another chain needs another conduit.
+
+This creation path serves plain and signed conduits alike, and the factory fixes the mode at creation
+from the owner Safe's guard (`SafeViewer.isSigned`): the Crossecute guard must already be installed on
+the Safe when the creation transaction executes, or the conduit is plain and stays plain. The signed
+bootstrap further needs the guard's authority activated. The SDK cannot read the Safe's guard without
+an RPC, so it does not check this; read the guard slot before signing and `isSigned(conduit)` on the
+factory afterwards. Plan and simulate plain OFT conduits elsewhere: `CrossecuteScript` resolves a
+conduit through the registry, in which this binding has no route.
+
+**Addresses.** `predictLzOftConduit` and `LzOft.predictConduit` take the factory address, which is the
+same on every chain it is deployed to, and hash the `Proxy` initcode of the pinned protocol revision
+(`LZ_OFT_PROXY_INIT_CODE_HASH`), taken from protocol's own build artifact, not compiled locally. Pass
+the deployed factory's `PROXY_INIT_CODE_HASH()` as the last argument to follow a different build. The
+conduit's receiver is at the conduit's own address on every destination: the factory's
+`predictReceiver` returns the calling conduit, so the recipient of a send is
+`encodeEvm(destinationChainId, conduit)`.
+
+**Sends carry no tokens.** The conduit sets `amountLD` and `minAmountLD` to zero for every send and
+bootstrap (L3.1), so a send moves only its fee, paid from the conduit's balance like any signed send.
+Nothing here builds a `SendParam`.
+
+**Signed bootstrap size is lane specific.** The graph and the setup calls in the body are variable
+size, and the destination envelope adds the home fields and proof, so its size and compose gas depend on
+the lane and the authority. The default compose gas the transmitter sends with is not a bound for it.
+Measure the lane, quote with `quoteBootstrap`, and pass an options attribute with the gas it needs
+(protocol #118 tracks fee, gas and payload caps).
+
+**Prerequisites the SDK does not check.** A conduit must not be created on an OFT that fails one of
+these, and nothing here reads chain state:
+
+- O1: `send` writes the caller as `composeFrom`.
+- O2: the OFT is peered both ways with every destination's OFT. Peers are checked at creation and at
+  each send, by the contracts.
+- O3: its enforced options for a send with a compose message carry lzReceive gas.
+- O4: it accepts a send of 0 tokens.
+- O5: its `lzReceive` is unordered.
+- O6: every chain involved is a `parity` chain in protocol's `deploy/chains.toml`, so the factory has one
+  address.
+- O7: the conduit's own team operates the OFT, since its owner, delegate and upgrade admin can stop the
+  conduit's channel.
+
+`deploy/CHECKS.md` section 7 in protocol says how to check each. An eid that belongs to another chain
+than its leaf's is not caught at creation either; that destination's bootstrap fails.
+
+**Not covered.** Authority relay and updates (sdk#14); live fee, gas, compose gas and payload cap
+validation (protocol #118); building the destination compose, which the factory does; planning plain
+OFT conduits; zkSync and Tron, whose CREATE2 formulas place the conduits elsewhere.
+
+`vectors/lzoft.json`, written by `test/LzOft.t.sol`, holds the leaf hashes, roots of 1, 2, 3 and 5
+leaves, calldata, salt and address that both languages reproduce. `vectors/lzoft-protocol.json` holds
+the options selector and `Proxy` initcode hash the pinned protocol gives, and the CI `protocol-pin` job
+runs protocol's `LzOftMessage`, `LzMessage` and `LzOftConduitFactory` over `vectors/lzoft.json` with
+`scripts/check-lzoft-vectors.py`, as protocol has no literal OFT vectors of its own.
