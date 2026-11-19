@@ -1,6 +1,9 @@
-import { type Address, type Hex, decodeFunctionData, encodeFunctionData } from "viem";
+import { type Address, type Hex, decodeFunctionData } from "viem";
 import { type SafeTxEnvelope, parseSafeTxFields, safeTxFieldNames, safeTxHashes, serializeSafeTxFields } from "./safeTx.js";
-import { type NestedSafeApproval, type SafeTxEvidence, type SignedSafeTx, registerRootData, relayLeafData, submitLeafData, submitMessageData } from "./signed.js";
+import {
+  type NestedSafeApproval, type SafeTxEvidence, type SignedSafeTx, checkSignedDispatchRange, registerRootData, relayLeafData, signedSendData,
+  submitLeafData, submitMessageData,
+} from "./signed.js";
 import { signedTransmitterAbi } from "./signedAbi.js";
 import { type MerklePackage, merklePackageFromJSON, merklePackageToJSON, verifyMerklePackage } from "./merkle.js";
 import { address, array, bytesHex, object, uint, word } from "./json.js";
@@ -22,6 +25,7 @@ export type DeliveryBundle = {
   merkle?: MerklePackage;
 };
 
+/** Builds and verifies a bundle. Addresses and hex fields come back in the form `parseDeliveryBundle` reads. */
 export function buildDeliveryBundle(input: {
   envelope: SafeTxEnvelope;
   signatures: Hex;
@@ -29,14 +33,15 @@ export function buildDeliveryBundle(input: {
   merkle?: MerklePackage;
 }): DeliveryBundle {
   const { envelope, signatures, nestedApprovals = [], merkle } = input;
-  const bundle: DeliveryBundle = {
+  checkSignedDispatchRange(envelope.chainId, envelope.tx.nonce, envelope.tx.value);
+  const bundle = deliveryBundleFromJSON(deliveryBundleToJSON({
     version: DELIVERY_BUNDLE_VERSION,
     safe: envelope.safe,
     homeChainId: envelope.chainId,
     safeTxHash: safeTxHashes(envelope).safeTxHash,
     evidence: { signedSafeTx: { safeTx: envelope.tx, signatures }, nestedApprovals },
     ...(merkle && { merkle }),
-  };
+  }));
   verifyDeliveryBundle(bundle);
   return bundle;
 }
@@ -50,13 +55,15 @@ export function buildDeliveryBundle(input: {
 export function verifyDeliveryBundle(bundle: DeliveryBundle): void {
   if (bundle.version !== DELIVERY_BUNDLE_VERSION) throw new Error(`unsupported delivery bundle version ${bundle.version}`);
   const { safeTx } = bundle.evidence.signedSafeTx;
+  checkSignedDispatchRange(bundle.homeChainId, safeTx.nonce, safeTx.value);
   const envelope: SafeTxEnvelope = { chainId: bundle.homeChainId, safe: bundle.safe, tx: safeTx };
   if (safeTxHashes(envelope).safeTxHash.toLowerCase() !== bundle.safeTxHash.toLowerCase()) throw new Error("safeTxHash mismatch");
   if (safeTx.operation !== 0) throw new Error("signed dispatch must be a CALL");
 
+  const data = safeTx.data.toLowerCase();
   if (bundle.merkle) {
     verifyMerklePackage(bundle.merkle);
-    if (safeTx.data !== registerRootData(bundle.merkle.root)) throw new Error("transaction is not registerRoot of the package root");
+    if (data !== registerRootData(bundle.merkle.root)) throw new Error("transaction is not registerRoot of the package root");
   } else {
     let decoded;
     try {
@@ -64,9 +71,9 @@ export function verifyDeliveryBundle(bundle: DeliveryBundle): void {
     } catch {
       throw new Error("transaction is not a signed sendMessage");
     }
-    if (decoded.functionName !== "sendMessage" || encodeFunctionData({ abi: signedTransmitterAbi, functionName: "sendMessage", args: decoded.args }) !== safeTx.data) {
-      throw new Error("transaction is not a signed sendMessage");
-    }
+    if (decoded.functionName !== "sendMessage") throw new Error("transaction is not a signed sendMessage");
+    const [destination, calls, attributes] = decoded.args;
+    if (data !== signedSendData(destination, calls, attributes)) throw new Error("transaction is not a signed sendMessage");
   }
 
   const seen = new Set<string>();
@@ -108,9 +115,8 @@ const signedTxFromJSON = (raw: unknown, at: string): SignedSafeTx => {
   return { safeTx: parseSafeTxFields(object(o.safeTx, safeTxFieldNames, `${at}.safeTx`)), signatures: bytesHex(o.signatures, `${at}.signatures`) };
 };
 
-export function serializeDeliveryBundle(bundle: DeliveryBundle): string {
-  verifyDeliveryBundle(bundle);
-  return JSON.stringify({
+export function deliveryBundleToJSON(bundle: DeliveryBundle): unknown {
+  return {
     version: bundle.version,
     safe: bundle.safe,
     homeChainId: bundle.homeChainId.toString(),
@@ -118,14 +124,14 @@ export function serializeDeliveryBundle(bundle: DeliveryBundle): string {
     signedSafeTx: signedTxToJSON(bundle.evidence.signedSafeTx),
     nestedApprovals: bundle.evidence.nestedApprovals.map((n) => ({ childSafe: n.childSafe, messageHash: n.messageHash, approval: signedTxToJSON(n.approval) })),
     merkle: bundle.merkle ? merklePackageToJSON(bundle.merkle) : null,
-  }, null, 2) + "\n";
+  };
 }
 
-/** Strictly parses the JSON layout, then runs `verifyDeliveryBundle`. */
-export function parseDeliveryBundle(json: string): DeliveryBundle {
-  const o = object(JSON.parse(json), ["version", "safe", "homeChainId", "safeTxHash", "signedSafeTx", "nestedApprovals", "merkle"], "bundle");
+/** Reads the JSON layout strictly. The result is not verified; call `verifyDeliveryBundle`. */
+export function deliveryBundleFromJSON(raw: unknown): DeliveryBundle {
+  const o = object(raw, ["version", "safe", "homeChainId", "safeTxHash", "signedSafeTx", "nestedApprovals", "merkle"], "bundle");
   if (o.version !== DELIVERY_BUNDLE_VERSION) throw new Error("bundle.version: unsupported delivery bundle version");
-  const bundle: DeliveryBundle = {
+  return {
     version: DELIVERY_BUNDLE_VERSION,
     safe: address(o.safe, "bundle.safe"),
     homeChainId: uint(o.homeChainId, "bundle.homeChainId"),
@@ -139,6 +145,16 @@ export function parseDeliveryBundle(json: string): DeliveryBundle {
     },
     ...(o.merkle !== null && { merkle: merklePackageFromJSON(o.merkle) }),
   };
+}
+
+export function serializeDeliveryBundle(bundle: DeliveryBundle): string {
+  verifyDeliveryBundle(bundle);
+  return JSON.stringify(deliveryBundleToJSON(bundle), null, 2) + "\n";
+}
+
+/** Strictly parses the JSON layout, then runs `verifyDeliveryBundle`. */
+export function parseDeliveryBundle(json: string): DeliveryBundle {
+  const bundle = deliveryBundleFromJSON(JSON.parse(json));
   verifyDeliveryBundle(bundle);
   return bundle;
 }
