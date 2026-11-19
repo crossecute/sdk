@@ -84,22 +84,21 @@ export function verifyDeliveryBundle(bundle: DeliveryBundle): void {
   }
 }
 
-function executionAt(bundle: DeliveryBundle, index: number) {
+function leafEntry(bundle: DeliveryBundle, index: number) {
   const entry = bundle.merkle?.leaves[index];
   if (!entry) throw new Error("no such Merkle leaf");
-  if (entry.kind !== "execution") throw new Error("not an execution leaf");
   return entry;
 }
 
 /** `relayLeaf` calldata for a transmitter on the source chain. */
 export function relayLeafFromBundle(bundle: DeliveryBundle, index: number): Hex {
-  const { leaf, proof } = executionAt(bundle, index);
+  const { leaf, proof } = leafEntry(bundle, index);
   return relayLeafData(bundle.evidence, leaf, proof);
 }
 
 /** `submitLeaf` calldata for the destination receiver, with no provider involved. */
 export function submitLeafFromBundle(bundle: DeliveryBundle, index: number): Hex {
-  const { leaf, proof } = executionAt(bundle, index);
+  const { leaf, proof } = leafEntry(bundle, index);
   return submitLeafData(bundle.evidence, leaf, proof);
 }
 

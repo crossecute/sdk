@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
 import {DispatchLeaves} from "../contracts/vendor/protocol135/DispatchLeaves.sol";
-import {ExecutionLeaf, BootstrapLeaf} from "../contracts/vendor/protocol135/SignedDispatchTypes.sol";
+import {ExecutionLeaf} from "../contracts/vendor/protocol135/SignedDispatchTypes.sol";
 
 /// @dev Writes vectors/merkle.json, which ts/test/merkle.test.ts replays. `guard3` uses the leaves and
 ///      the cast-computed hashes and root of the protocol guard's `test_publish_matchesOffchainVector`.
@@ -20,13 +20,13 @@ contract MerklePackageTest is Test {
         }
     }
 
-    function mixedLeaves() internal pure returns (bytes[] memory leaves) {
+    function multiLeaves() internal pure returns (bytes[] memory leaves) {
         bytes[] memory attributes = new bytes[](0);
         leaves = new bytes[](4);
         leaves[0] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001aa", 3, 10, 20, hex"01", attributes));
         leaves[1] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001bb", 0, 10, 20, hex"02", attributes));
         leaves[2] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001aa", 4, 10, 20, hex"03", attributes));
-        leaves[3] = SignedDispatch.encodeLeaf(BootstrapLeaf(hex"0001000001cc", 10, 20, hex"04"));
+        leaves[3] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001cc", 0, 10, 20, hex"04", attributes));
     }
 
     function describe(string memory name, bytes[] memory leaves) internal returns (string memory) {
@@ -49,7 +49,7 @@ contract MerklePackageTest is Test {
             string memory name = string.concat("guard", vm.toString(sizes[i]));
             vm.serializeString(key, name, describe(name, guardLeaves(sizes[i])));
         }
-        string memory json = vm.serializeString(key, "mixed", describe("mixed", mixedLeaves()));
+        string memory json = vm.serializeString(key, "multi", describe("multi", multiLeaves()));
         vm.writeFile("vectors/merkle.json", json);
     }
 

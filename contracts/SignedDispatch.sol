@@ -2,22 +2,23 @@
 pragma solidity ^0.8.28;
 
 import {SafeTx} from "./Types.sol";
-import {DispatchLeaves} from "./vendor/protocol135/DispatchLeaves.sol";
 import {
     ExecutionLeaf,
-    BootstrapLeaf,
     SafeTxEvidence,
-    SignedBootstrap
+    SignedBootstrap,
+    WIRE_STANDALONE,
+    WIRE_MERKLE
 } from "./vendor/protocol135/SignedDispatchTypes.sol";
+import {AuthorityGraph} from "./vendor/protocol135/AuthorityGraph.sol";
 import {ISignedTransmitter} from "./vendor/protocol135/ISignedTransmitter.sol";
 import {ISignedReceiver} from "./vendor/protocol135/ISignedReceiver.sol";
 import {ICrossecuteGuard} from "./vendor/protocol135/ICrossecuteGuard.sol";
-import {SafeAuthorityRecord} from "./vendor/protocol135/SafeAuthorityTypes.sol";
 import {IERC7786GatewaySource} from "@crossecute/protocol/messaging/IErc7786.sol";
+import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 
 /// @notice Foundry builders for protocol #135. Does not collect or authenticate signatures,
 ///         simulate provider delivery, or predict receiver addresses from local initcode.
-/// @dev Import leaf/evidence types from vendor/protocol135/SignedDispatchTypes.sol until
+/// @dev Import leaf/evidence/graph types from vendor/protocol135 until
 ///      a protocol package containing these interfaces is published.
 library SignedDispatch {
     error NoLeaves();
@@ -27,10 +28,6 @@ library SignedDispatch {
     /// @notice Fields for guard publication. abi.encode(leaf) would add a tuple offset.
     function encodeLeaf(ExecutionLeaf memory leaf) internal pure returns (bytes memory) {
         return abi.encode(leaf.destination, leaf.nonce, leaf.validAfter, leaf.deadline, leaf.calls, leaf.attributes);
-    }
-
-    function encodeLeaf(BootstrapLeaf memory leaf) internal pure returns (bytes memory) {
-        return abi.encode(leaf.destination, leaf.validAfter, leaf.deadline, leaf.setupCalls);
     }
 
     /// @notice Ordered tree with sorted sibling hashing and odd-node promotion, matching the guard.
@@ -85,14 +82,16 @@ library SignedDispatch {
         return abi.encodeCall(IERC7786GatewaySource.sendMessage, (destination, calls, attributes));
     }
 
-    function bootstrapData(
-        bytes32 treeRoot,
-        BootstrapLeaf memory leaf,
-        bytes32[] memory proof,
-        bytes[] memory attributes
-    ) internal pure returns (bytes memory) {
-        DispatchLeaves.requireProof(proof, treeRoot, DispatchLeaves.hash(leaf));
-        return abi.encodeCall(ISignedTransmitter.bootstrap, (abi.encode(treeRoot, uint256(0), leaf, proof), attributes));
+    /// @notice `bootstrap` calldata for a signed transmitter: `Payload.encodeBootstrap`'s payload naming the
+    ///         destination chain, carrying `bootstrapBody`.
+    function bootstrapData(bytes memory destinationChainIdentifier, bytes memory body, bytes[] memory attributes)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeCall(
+            ISignedTransmitter.bootstrap, (Payload.encodeBootstrap(destinationChainIdentifier, body), attributes)
+        );
     }
 
     function registerData(bytes32 treeRoot) internal pure returns (bytes memory) {
@@ -118,7 +117,7 @@ library SignedDispatch {
     }
 
     function standaloneWire(SafeTxEvidence memory evidence) internal pure returns (bytes memory) {
-        return abi.encode(uint256(1), evidence);
+        return abi.encode(WIRE_STANDALONE, evidence);
     }
 
     function merkleWire(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof)
@@ -126,15 +125,18 @@ library SignedDispatch {
         pure
         returns (bytes memory)
     {
-        return abi.encode(uint256(2), evidence, leaf, proof);
+        return abi.encode(WIRE_MERKLE, evidence, leaf, proof);
     }
 
-    function bootstrapBody(SafeTxEvidence memory evidence, SafeAuthorityRecord[] memory records)
+    /// @notice `abi.encode(SignedBootstrap)` for the guard's selected `updateHead` and graph, with
+    ///         `setupCalls = abi.encode(Call[])`. The graph is not validated here: the transmitter checks
+    ///         it against the guard and the receiver checks its shape.
+    function bootstrapBody(address guard, bytes32 updateHead, AuthorityGraph memory graph, bytes memory setupCalls)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encode(SignedBootstrap(evidence, records));
+        return abi.encode(SignedBootstrap(guard, updateHead, abi.encode(graph), setupCalls));
     }
 
     function relayData(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof)

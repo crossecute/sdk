@@ -13,9 +13,9 @@ const nested: s.NestedSafeApproval = {
   childSafe: addr(0x3333), messageHash: word(5),
   approval: { safeTx: s.signedDispatchTx(1n, addr(0x3333), addr(0x4444), 2n, "0x7788").tx, signatures: "0xaabb" },
 };
-const leaves: m.MerkleLeaf[] = [0n, 1n, 2n].map((nonce) => ({
-  kind: "execution", leaf: { destination: DESTINATION, nonce, validAfter: 0n, deadline: 1000n, calls: "0xc0de", attributes: ["0xaa"] },
-}));
+const leaves: s.ExecutionLeaf[] = [0n, 1n, 2n].map((nonce) => (
+  { destination: DESTINATION, nonce, validAfter: 0n, deadline: 1000n, calls: "0xc0de", attributes: ["0xaa"] }
+));
 const pkg = () => m.buildMerklePackage(leaves, [{ destination: DESTINATION, nextNonce: 0n }]);
 const standalone = () => b.buildDeliveryBundle({
   envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 42n, s.signedSendData(DESTINATION, "0xc0de", ["0xaa"]), 3n),
@@ -132,7 +132,6 @@ describe("delivery from a bundle", () => {
   it("builds the same calldata as the direct builders", () => {
     const bundle = merkle(), { evidence } = bundle;
     pkg().leaves.forEach((entry, i) => {
-      if (entry.kind !== "execution") throw new Error("fixture");
       expect(b.relayLeafFromBundle(bundle, i)).toBe(s.relayLeafData(evidence, entry.leaf, entry.proof));
       expect(b.submitLeafFromBundle(bundle, i)).toBe(s.submitLeafData(evidence, entry.leaf, entry.proof));
     });
@@ -142,12 +141,5 @@ describe("delivery from a bundle", () => {
     expect(() => b.submitMessageFromBundle(merkle())).toThrow("not a standalone bundle");
     expect(() => b.relayLeafFromBundle(standalone(), 0)).toThrow("no such Merkle leaf");
     expect(() => b.relayLeafFromBundle(merkle(), 3)).toThrow("no such Merkle leaf");
-  });
-  it("does not deliver a bootstrap leaf as an execution", () => {
-    const boot: m.MerkleLeaf = { kind: "bootstrap", leaf: { destination: DESTINATION, validAfter: 0n, deadline: 1000n, setupCalls: "0x04" } };
-    const p = m.buildMerklePackage([boot], []);
-    const bundle = b.buildDeliveryBundle({ envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, s.registerRootData(p.root)), signatures: "0x", merkle: p });
-    expect(() => b.relayLeafFromBundle(bundle, 0)).toThrow("not an execution leaf");
-    expect(b.parseDeliveryBundle(b.serializeDeliveryBundle(bundle))).toEqual(bundle);
   });
 });

@@ -8,36 +8,36 @@ import { crossecuteGuardAbi } from "../src/signedAbi.js";
 const vectors = JSON.parse(readFileSync(new URL("../../vectors/merkle.json", import.meta.url), "utf8"));
 
 const GUARD_DESTINATION: Hex = "0x000100000114";
-const guardLeaves = (count: number): m.MerkleLeaf[] =>
-  Array.from({ length: count }, (_, i) => ({
-    kind: "execution" as const,
-    leaf: { destination: GUARD_DESTINATION, nonce: BigInt(i), validAfter: 0n, deadline: 1000n, calls: "0xc0de" as Hex, attributes: ["0xaa"] as Hex[] },
-  }));
-const exec = (destination: Hex, nonce: bigint, calls: Hex): m.MerkleLeaf => ({
-  kind: "execution", leaf: { destination, nonce, validAfter: 10n, deadline: 20n, calls, attributes: [] },
-});
-const mixedLeaves: m.MerkleLeaf[] = [
+const guardLeaves = (count: number): s.ExecutionLeaf[] =>
+  Array.from({ length: count }, (_, i) => (
+    { destination: GUARD_DESTINATION, nonce: BigInt(i), validAfter: 0n, deadline: 1000n, calls: "0xc0de" as Hex, attributes: ["0xaa"] as Hex[] }
+  ));
+const exec = (destination: Hex, nonce: bigint, calls: Hex): s.ExecutionLeaf => (
+  { destination, nonce, validAfter: 10n, deadline: 20n, calls, attributes: [] }
+);
+const multiLeaves: s.ExecutionLeaf[] = [
   exec("0x0001000001aa", 3n, "0x01"),
   exec("0x0001000001bb", 0n, "0x02"),
   exec("0x0001000001aa", 4n, "0x03"),
-  { kind: "bootstrap", leaf: { destination: "0x0001000001cc", validAfter: 10n, deadline: 20n, setupCalls: "0x04" } },
+  exec("0x0001000001cc", 0n, "0x04"),
 ];
-const mixedNonces: m.ReceiverNonce[] = [
+const multiNonces: m.ReceiverNonce[] = [
   { destination: "0x0001000001aa", nextNonce: 3n },
   { destination: "0x0001000001bb", nextNonce: 0n },
+  { destination: "0x0001000001cc", nextNonce: 0n },
 ];
 const nonces = (): m.ReceiverNonce[] => [{ destination: GUARD_DESTINATION, nextNonce: 0n }];
 
 describe("package parity with the Solidity reference", () => {
-  const cases: [string, m.MerkleLeaf[], m.ReceiverNonce[]][] = [
-    ...[1, 2, 3, 5, 8, 9].map((n): [string, m.MerkleLeaf[], m.ReceiverNonce[]] => [`guard${n}`, guardLeaves(n), nonces()]),
-    ["mixed", mixedLeaves, mixedNonces],
+  const cases: [string, s.ExecutionLeaf[], m.ReceiverNonce[]][] = [
+    ...[1, 2, 3, 5, 8, 9].map((n): [string, s.ExecutionLeaf[], m.ReceiverNonce[]] => [`guard${n}`, guardLeaves(n), nonces()]),
+    ["multi", multiLeaves, multiNonces],
   ];
   for (const [name, leaves, receiverNonces] of cases) {
     it(name, () => {
       const v = vectors[name];
       const pkg = m.buildMerklePackage(leaves, receiverNonces);
-      expect(pkg.leaves.map(m.encodeMerkleLeaf)).toEqual(v.leaves);
+      expect(pkg.leaves.map(({ leaf }) => s.encodeExecutionLeaf(leaf))).toEqual(v.leaves);
       expect(pkg.root).toBe(v.root);
       expect(pkg.leaves.map((e) => e.hash)).toEqual(v.hashes);
       pkg.leaves.forEach((e, i) => expect(e.proof).toEqual(v[`proof${i}`]));
@@ -59,20 +59,20 @@ describe("package parity with the Solidity reference", () => {
     const pkg = m.buildMerklePackage(guardLeaves(3), nonces());
     const { functionName, args } = decodeFunctionData({ abi: crossecuteGuardAbi, data: m.merklePublishData(pkg) });
     expect(functionName).toBe("publishLeaves");
-    expect(args![0]).toEqual(pkg.leaves.map(m.encodeMerkleLeaf));
+    expect(args![0]).toEqual(pkg.leaves.map(({ leaf }) => s.encodeExecutionLeaf(leaf)));
   });
 });
 
 describe("local nonce plans", () => {
-  const build = (leaves: m.MerkleLeaf[], n = nonces()) => m.buildMerklePackage(leaves, n);
+  const build = (leaves: s.ExecutionLeaf[], n = nonces()) => m.buildMerklePackage(leaves, n);
   it("rejects two batches at one receiver nonce", () => {
     const [a] = guardLeaves(1);
-    const other: m.MerkleLeaf = { kind: "execution", leaf: { ...(a as { leaf: s.ExecutionLeaf }).leaf, calls: "0xbeef" } };
+    const other = { ...a, calls: "0xbeef" as Hex };
     expect(() => build([a, other])).toThrow("conflicting nonce");
   });
   it("allows one batch at one nonce with different attributes, and rejects the identical leaf twice", () => {
-    const [a] = guardLeaves(1) as { kind: "execution"; leaf: s.ExecutionLeaf }[];
-    const retargeted: m.MerkleLeaf = { kind: "execution", leaf: { ...a.leaf, attributes: ["0xbb"] } };
+    const [a] = guardLeaves(1);
+    const retargeted = { ...a, attributes: ["0xbb"] as Hex[] };
     expect(build([a, retargeted]).leaves).toHaveLength(2);
     expect(() => build([a, a])).toThrow("duplicate leaf");
   });
@@ -91,10 +91,8 @@ describe("local nonce plans", () => {
     expect(() => build(guardLeaves(1), [...nonces(), ...nonces()])).toThrow("duplicate receiver nonce");
     expect(() => build(guardLeaves(1), [{ destination: GUARD_DESTINATION, nextNonce: -1n }])).toThrow("invalid receiver nonce");
   });
-  it("needs a leaf, and bootstrap leaves need no receiver nonce", () => {
+  it("needs a leaf", () => {
     expect(() => build([])).toThrow("no leaves");
-    const boot = mixedLeaves[3];
-    expect(build([boot], []).leaves).toHaveLength(1);
   });
   it("matches receivers regardless of destination hex case and returns lowercase hex", () => {
     const pkg = build([exec("0x0001000001aa", 0n, "0x01")], [{ destination: "0x0001000001AA", nextNonce: 0n }]);
@@ -106,7 +104,7 @@ describe("local nonce plans", () => {
 });
 
 describe("package JSON", () => {
-  const pkg = () => m.buildMerklePackage(mixedLeaves, mixedNonces);
+  const pkg = () => m.buildMerklePackage(multiLeaves, multiNonces);
   it("round trips with bigints as decimal strings", () => {
     const json = m.serializeMerklePackage(pkg());
     expect(JSON.parse(json).receiverNonces[0].nextNonce).toBe("3");
@@ -126,7 +124,8 @@ describe("package JSON", () => {
     expect(() => m.parseMerklePackage(edit((o) => { o.version = 2; }))).toThrow("unsupported Merkle package version");
     expect(() => m.parseMerklePackage(edit((o) => { o.extra = 1; }))).toThrow("fields must be exactly");
     expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].nonce = "0x3"; }))).toThrow("not a decimal string");
-    expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].kind = "other"; }))).toThrow("not execution or bootstrap");
+    expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].kind = "execution"; }))).toThrow("fields must be exactly");
+    expect(() => m.parseMerklePackage(edit((o) => { delete o.leaves[0].calls; }))).toThrow("fields must be exactly");
     expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].proof = ["0x12"]; }))).toThrow("32-byte hex word");
     expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].nonce = (2n ** 256n).toString(); }))).toThrow("leaves[0].nonce: exceeds uint256");
     expect(() => m.parseMerklePackage(edit((o) => { o.receiverNonces[0].nextNonce = (2n ** 256n).toString(); }))).toThrow("exceeds uint256");

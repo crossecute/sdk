@@ -14,6 +14,8 @@ belong to Forge Attest, `cast wallet sign`, or the Safe UI.
 The Foundry planner covers plain `sendMessage` and `bootstrap` from an owner Safe or EOA.
 The signed builders support [protocol PR #135](https://github.com/crossecute/protocol/pull/135):
 standalone Safe sends, published Merkle trees, signed bootstrap, leaf relay and direct delivery.
+Authority updates (atomic execution, witness retrieval, catch-up planning) are tracked in
+[sdk#14](https://github.com/crossecute/sdk/issues/14).
 See [Safe-signed dispatch](#safe-signed-dispatch-protocol-pr-135) for the pinned revision and workflow.
 
 ## Install
@@ -174,14 +176,40 @@ first.
 ## Safe-signed dispatch (protocol PR #135)
 
 The signed API targets protocol revision
-[`5d7be13`](https://github.com/crossecute/protocol/commit/5d7be13e3afccb88c8a1b8a298bc56709706f76c).
-It includes `SafeTxEvidence { signedSafeTx, nestedApprovals }`, `SignedSafeTx`,
-`NestedSafeApproval`, authority records, execution/bootstrap leaves, and the current
-transmitter, receiver (including nonce/authority views), transceiver, guard, and
-`SafeBatchExecutor` ABIs. The published protocol 0.1.0
+[`3169f8c`](https://github.com/crossecute/protocol/commit/3169f8cb72721330ec0af7b0235eeaf6877b9c74),
+the tip of #135. It includes `SafeTxEvidence { signedSafeTx, nestedApprovals }`, `SignedSafeTx`,
+`NestedSafeApproval`, `AuthorityGraph`, execution leaves, `SignedBootstrap`, and the current
+transmitter, receiver (including nonce and authority views), transceiver, guard, and
+`SafeBatchExecutor` ABIs, trimmed to the functions and events the builders and this document use
+plus every custom error, so reverts decode; inherited access-control and admin members are omitted. The published protocol 0.1.0
 package predates these interfaces: the SDK includes a small MIT compatibility snapshot
-under `contracts/vendor/protocol135`, with original-source checksums and a refresh script.
+under `contracts/vendor/protocol135`, with original-source checksums and a refresh script;
+`ts/test/protocol135.test.ts` fails if the manifest, vendored files, generated ABIs and
+`PROTOCOL_135_REVISION` disagree.
 The existing plain planner and `crossecute check` still handle plain plans only.
+
+### Authority model
+
+A signed conduit and a plain conduit share one salt, `keccak256(abi.encode(owner, userSalt,
+homeChainKey))`, so no address commits to the owner's authority and an ownership change moves
+no address. The mode is fixed when the transmitter is created. Obtain addresses from the
+deployed transceiver (`predictConduit`, `predictReceiver(chainKey, owner, salt)`), never from
+local compiler initcode. `transceiverExtensionAbi.signedAuthority(owner)` returns the owner's
+live records and is only the creation-time mode probe; no creation records are stored.
+
+The owner Safe activates its authority with the source guard, which stores the selected
+`updateHead` and the hash of the selected graph. A bootstrap carries that head and graph to
+each destination. The graph is an `AuthorityGraph`: nodes in canonical depth-first order from
+the owner Safe, each a `SafeAuthorityRecord` (threshold and owners in `getOwners()` order, kind
+`0` for an EOA and `1` for a nested Safe) with a `position`, zero for the root and the selected
+update head of that Safe for each descendant. Each Safe has at most 16 immediate owners.
+`authorityGraphHash(sourceChainId, graph)` is the value the guard stores as
+`selection(safe).authorityHash` and a bootstrap must match.
+
+Each receiver stores the head and graph its own bootstrap carried, on the provider's and source
+transceiver's authentication, and advances only through authority updates submitted to it.
+Owners read `selection()` and `graph(selection().authorityHash)` on a receiver before relying
+on it. Building and submitting authority updates is not covered (sdk#14).
 
 ### Standalone sends and direct delivery
 
@@ -214,12 +242,13 @@ calldata and signature blob byte for byte, including any policy extension; the g
 `consume` returns an empty `safeTx.data`, which must be restored from the original Safe
 transaction. Cached nested approvals use the child's source-chain Safe message domain;
 `safeMessageHash` computes that hash. The SDK does not fetch cached approvals or authenticate
-signatures. Quotes can collect additional live approvals; use the returned bootstrap body
-and deployed contract state as the authority for source transport.
+signatures. Quotes can collect additional live approvals; deployed contract state is the
+authority for source transport.
 
 A complete valid bundle can execute directly at the receiver **before the source transaction
-executes**. Replacing/canceling the source transaction does not revoke it. Source checks use
-live Safe owners, but receivers retain the creation authority; rotation is outside #135.
+executes**. Replacing/canceling the source transaction does not revoke it. A receiver verifies
+signatures against the authority graph it has selected, which may differ from the live owners
+until its authority updates are submitted.
 
 Signed sends must be individual Safe **CALL** transactions with zero `safeTxGas` and
 `gasPrice`. Each has its own Safe nonce; do not use the plain planner's MultiSend transaction.
@@ -229,29 +258,27 @@ The first nonce must match the Safe's live nonce at execution. The executor supp
 fund the Safe/transmitter separately, or include the required transmitter top-up in the
 Safe transaction's signed `value` before collecting signatures. Changing it requires new signatures.
 
-### Published trees, bootstrap, relay and retry
+### Published trees, relay and direct delivery
 
 ```ts
 import {
-  encodeBootstrapLeaf, encodeExecutionLeaf, dispatchTree, publishLeavesData,
-  signedBootstrapData, registerRootData, relayLeafData, submitLeafData,
+  encodeExecutionLeaf, dispatchTree, publishLeavesData,
+  registerRootData, relayLeafData, submitLeafData,
 } from "@crossecute/sdk";
 
-const published = [encodeBootstrapLeaf(bootstrapLeaf), ...executionLeaves.map(encodeExecutionLeaf)];
+const published = executionLeaves.map(encodeExecutionLeaf);
 const tree = dispatchTree(published);
 const publishCalldata = publishLeavesData(published); // anyone calls the owner's guard
-const bootstrapCalldata = signedBootstrapData(tree.root, bootstrapLeaf, tree.proofs[0], bootstrapAttributes);
 const registrationCalldata = registerRootData(tree.root); // nonpayable; sign a separate Safe CALL
-// Build/sign separate envelopes for bootstrap and registerRoot as above.
-const relayCalldata = relayLeafData(registrationEvidence, executionLeaves[0], tree.proofs[1]);
-const directCalldata = submitLeafData(registrationEvidence, executionLeaves[0], tree.proofs[1]);
+const relayCalldata = relayLeafData(registrationEvidence, executionLeaves[0], tree.proofs[0]);
+const directCalldata = submitLeafData(registrationEvidence, executionLeaves[0], tree.proofs[0]);
 ```
 
 Publication encodes a leaf's **fields**, not an offset-prefixed ABI tuple. Hashes are double
 keccak; siblings are sorted, leaves stay in publication order, and odd last nodes move up
 unchanged. `dispatchTree` returns proofs by original index; `verifyDispatchProof` checks them.
 `executionId` excludes attributes while `executionLeafHash` includes them. Execution nonces
-are local to each receiver; bootstrap has no local nonce. Windows are inclusive destination
+are local to each receiver. Windows are inclusive destination
 block times: `validAfter <= timestamp <= deadline` (zero deadline is not unlimited).
 
 `registerRoot` requires prior guard publication on the source. A source relay additionally
@@ -262,17 +289,45 @@ source registration or publication. It shares replay state with provider deliver
 Quote relay fees with `signedTransmitterAbi.quoteRelay` using the **funding relayer's account**,
 then pay from that same account when calling `relayLeaf`; recipient-sensitive provider quotes
 must match the sender. Excess and synchronous refunds return to the relayer; the transmitter's
-prefunded balance is preserved. `quoteSignedBootstrap(evidence)` returns `(fee, body)`;
-`retryBootstrap(body)` retries the exact pending body after failed source transport. Top-ups
-for direct submissions remain at the receiver, including authenticated duplicates.
+prefunded balance is preserved. Top-ups for direct submissions remain at the receiver,
+including authenticated duplicates. `encodeStandaloneWire` and `encodeMerkleWire` build the
+exact transport encodings, including nested approvals.
 
-`encodeMerkleWire` and `encodeSignedBootstrap` build the exact transport encodings, including
-nested approvals and creation records. `validateAuthorityRecords` checks canonical first-visit
-DFS order, thresholds, kinds, cycles and reachability; `authorityGraphHash` hashes those records.
-`signedConduitSalt` computes the signed salt commitment only. Obtain receiver addresses from
-the deployed transceiver with `conduitTransceiverAbi.predictReceiver(chainKey, owner, salt, graph)`,
-never local compiler initcode. `transceiverExtensionAbi` exposes `signedAuthority` and
-`predictConduit`; `transceiverBaseAbi` includes conduit creation and signed bootstrap entry points.
+### Signed bootstrap
+
+```ts
+import {
+  encodeCalls, encodeEvmChain, signedBootstrapData, authorityGraphHash,
+} from "@crossecute/sdk";
+
+// selection is guard.selection(ownerSafe); authority is the graph that hashes to selection.authorityHash.
+if (authorityGraphHash(homeChainId, authority) !== selection.authorityHash) throw new Error("not the selected graph");
+const data = signedBootstrapData(
+  encodeEvmChain(destinationChainId),
+  { guard, updateHead: selection.updateHead, authority, setupCalls: encodeCalls(setupCalls) },
+  ownerSafe,
+  attributes,
+);
+const envelope = signedDispatchTx(homeChainId, ownerSafe, transmitter, safeNonce, data);
+```
+
+`bootstrap(payload, attributes)` is a separate Safe CALL like any signed send. Its payload is
+`Payload.encodeBootstrap(destinationChainIdentifier, abi.encode(SignedBootstrap(guard, updateHead,
+abi.encode(graph), setupCalls)))`, and `setupCalls` is `abi.encode(Call[])`. Both quote and send
+require `guard` to be the Safe's installed guard and the head and graph hash to equal its
+selection, and the Safe must have activated first. Price it with
+`signedTransmitterAbi.quoteBootstrap(payload, attributes)`, which validates the same body.
+`signedBootstrapData(destination, body, owner, attributes)` and `encodeSignedBootstrap(body, owner)`
+reject a zero head and run `validateAuthorityGraph(graph, owner)`, which checks what the receiver
+checks of the body's shape: `owner` as the root at position zero (a graph canonical for another
+Safe is rejected), nonzero descendant positions, canonical depth-first order without cycles,
+duplicates or unreachable nodes, valid thresholds and owner kinds, and at most 16 owners per Safe.
+They cannot check the head, the graph hash or positions against the guard; compare
+`authorityGraphHash` with the guard's selection as above. The Foundry `SignedDispatch.bootstrapBody`
+validates nothing. Signatures prove nothing about a carried graph, so the destination trusts the provider
+and the source transceiver for it. A failed source transport reverts the Safe's bootstrap
+execution and the Safe can sign another; a second delivery to an existing receiver reverts.
+Bootstrap carries no historical updates.
 
 There is no signed zkSync/Tron or LayerZero OFT path here. Provider payload sizing and gas must
 include signatures, nested verification, proof and receiver work. The inherited 200k payload /
@@ -282,9 +337,12 @@ live provider cap, fee, simulation result, signature quorum or destination state
 ### Foundry signed builders
 
 `SignedDispatch` supplies the same field encodings, Merkle root and per-leaf proofs
-(`SignedDispatch.proof`), standalone/bootstrap/root calldata, wire bodies, relay and direct-submission calldata. Import `ExecutionLeaf`,
-`BootstrapLeaf`, `SafeTxEvidence`, and `NestedSafeApproval` from
-`@crossecute/sdk/vendor/protocol135/SignedDispatchTypes.sol`; `SafeTx` in `Types.sol` re-exports
+(`SignedDispatch.proof`), standalone/bootstrap/root calldata, wire bodies, relay and direct-submission calldata.
+`bootstrapBody(guard, updateHead, graph, setupCalls)` and `bootstrapData(destinationChainIdentifier, body,
+attributes)` build the bootstrap of the previous section without validating the graph. Import `ExecutionLeaf`,
+`SafeTxEvidence`, and `NestedSafeApproval` from
+`@crossecute/sdk/vendor/protocol135/SignedDispatchTypes.sol` and `AuthorityGraph` from
+`@crossecute/sdk/vendor/protocol135/AuthorityGraph.sol`; `SafeTx` in `Types.sol` re-exports
 the shared guard type. Build individual signed transactions with
 `SignedDispatch.transaction(transmitter, nonce, data, value)`, hash with `SafeTxHash`, and
 write Forge Attest input with `PlanJson.safeTxTypedData(homeChainId, ownerSafe, tx)`.
@@ -292,10 +350,13 @@ Simulate receiver calls and full provider entry points against pinned forks sepa
 `CrossecuteScript._plan` is the plain-mode planner.
 
 `test/SignedDispatch.t.sol` writes committed Solidity reference vectors for hashes, nested
-wire encodings, calldata and atomic batches. TypeScript verifies parity against those vectors,
-plus odd tree sizes, tampering, replay identities, authority graphs and source nonce order.
+wire encodings, calldata and atomic batches. `vectors/authority.json` holds two of protocol's own
+#109 bootstrap vectors, copied at the pinned revision by the sync script; Solidity and TypeScript
+both reproduce their encoded body, and TypeScript their record and graph hashes. TypeScript
+verifies parity against those vectors, plus odd tree sizes, tampering, replay identities,
+graph validation and source nonce order.
 `test/MerklePackage.t.sol` writes `vectors/merkle.json` (trees of 1, 2, 3, 5, 8 and 9 leaves and
-a mixed execution/bootstrap tree) and checks the protocol guard's cast-computed three-leaf root and
+a tree over several receivers) and checks the protocol guard's cast-computed three-leaf root and
 leaf hashes. TypeScript builds the same trees and compares every encoded leaf, hash, root and proof.
 
 ### Merkle package and delivery bundle
@@ -322,5 +383,4 @@ duplicate `(childSafe, messageHash)` approvals. Hex fields compare case-insensit
 functions return lowercase hex and checksummed addresses, the form the parsers read. Signatures,
 thresholds and nested approval contents are verified by the receiver, not here.
 `relayLeafFromBundle`, `submitLeafFromBundle` and `submitMessageFromBundle` produce the delivery
-calldata, so an independent submitter needs only the bundle. Bootstrap leaves are carried in the
-tree but delivered with `signedBootstrapData`. Unknown bundle or package versions are rejected.
+calldata, so an independent submitter needs only the bundle. Unknown bundle or package versions are rejected.
