@@ -1,4 +1,5 @@
 export * from "./encoding.js";
+export * from "./merkle.js";
 export * from "./plan.js";
 export * from "./safeTx.js";
 export * from "./signed.js";
