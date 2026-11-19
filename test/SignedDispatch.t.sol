@@ -108,20 +108,53 @@ contract SignedDispatchTest is Test {
         vm.writeFile("vectors/signed.json", json);
     }
 
-    /// @dev The first protocol #109 receiver vector: one root Safe with three EOA owners.
-    function test_bootstrapBodyMatchesProtocolVector() public view {
+    function jsonGraph(string memory json, string memory key) internal view returns (AuthorityGraph memory g) {
+        string memory nodes = string.concat(".", key, ".graph.nodes");
+        uint256 count;
+        while (vm.keyExistsJson(json, string.concat(nodes, "[", vm.toString(count), "]"))) ++count;
+        g.nodes = new AuthorityNode[](count);
+        for (uint256 i; i < count; ++i) {
+            string memory node = string.concat(nodes, "[", vm.toString(i), "]");
+            string memory record = string.concat(node, ".record");
+            uint256 ownerCount;
+            while (vm.keyExistsJson(json, string.concat(record, ".owners[", vm.toString(ownerCount), "]"))) ++ownerCount;
+            SafeOwner[] memory owners = new SafeOwner[](ownerCount);
+            for (uint256 j; j < ownerCount; ++j) {
+                string memory owner = string.concat(record, ".owners[", vm.toString(j), "]");
+                owners[j] = SafeOwner(
+                    vm.parseJsonAddress(json, string.concat(owner, ".owner")),
+                    uint8(vm.parseJsonUint(json, string.concat(owner, ".kind")))
+                );
+            }
+            g.nodes[i] = AuthorityNode(
+                SafeAuthorityRecord(
+                    vm.parseJsonAddress(json, string.concat(record, ".safe")),
+                    vm.parseJsonUint(json, string.concat(record, ".threshold")),
+                    owners
+                ),
+                vm.parseJsonBytes32(json, string.concat(node, ".position"))
+            );
+        }
+    }
+
+    /// @dev Replays both protocol #109 bootstrap vectors in vectors/authority.json: a single root Safe and a
+    ///      multilevel graph with shared nested Safes. The graph comes from the JSON, so a resync is followed.
+    function test_bootstrapBodyMatchesProtocolVectors() public view {
         string memory json = vm.readFile("vectors/authority.json");
-        SafeOwner[] memory owners = new SafeOwner[](3);
-        owners[0] = SafeOwner(0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf, 0);
-        owners[1] = SafeOwner(0x2B5AD5c4795c026514f8317c7a215E218DcCD6cF, 0);
-        owners[2] = SafeOwner(0x6813Eb9362372EEF6200f3b1dbC3f819671cBA69, 0);
-        AuthorityGraph memory g;
-        g.nodes = new AuthorityNode[](1);
-        g.nodes[0] = AuthorityNode(SafeAuthorityRecord(vm.parseJsonAddress(json, ".single.sourceSafe"), 2, owners), 0);
-        bytes memory body = SignedDispatch.bootstrapBody(
-            vm.parseJsonAddress(json, ".single.guard"), vm.parseJsonBytes32(json, ".single.updateHead"), g, emptySetup()
-        );
-        assertEq(body, vm.parseJsonBytes(json, ".single.encoded"));
+        string[2] memory keys = ["single", "shared"];
+        for (uint256 i; i < keys.length; ++i) {
+            string memory key = keys[i];
+            AuthorityGraph memory g = jsonGraph(json, key);
+            assertEq(g.nodes[0].record.safe, vm.parseJsonAddress(json, string.concat(".", key, ".sourceSafe")), key);
+            bytes memory body = SignedDispatch.bootstrapBody(
+                vm.parseJsonAddress(json, string.concat(".", key, ".guard")),
+                vm.parseJsonBytes32(json, string.concat(".", key, ".updateHead")),
+                g,
+                emptySetup()
+            );
+            assertEq(body, vm.parseJsonBytes(json, string.concat(".", key, ".encoded")), key);
+        }
+        assertEq(jsonGraph(json, "shared").nodes.length, 3);
     }
 
     function test_bootstrapDataWrapsPayloadForDestination() public pure {
