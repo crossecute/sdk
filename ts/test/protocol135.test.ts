@@ -49,6 +49,22 @@ describe("protocol #135 snapshot", () => {
     }
   });
 
+  it("derives tuple layouts with the member names and order the encoders assume", () => {
+    type Node = { name?: string; type: string; components?: readonly Node[] };
+    const fn = (abi: readonly any[], name: string) => abi.find((f) => f.type === "function" && f.name === name);
+    const names = (n: Node | undefined) => n?.components?.map((c) => c.name);
+    const [evidence, leaf] = fn(sdk.signedTransmitterAbi, "relayLeaf").inputs as Node[];
+    expect(names(leaf)).toEqual(["destination", "nonce", "validAfter", "deadline", "calls", "attributes"]);
+    expect(names(evidence)).toEqual(["signedSafeTx", "nestedApprovals"]);
+    const graph = fn(sdk.signedReceiverAbi, "graph").outputs[0] as Node;
+    expect(graph.type).toBe("tuple");
+    expect(names(graph)).toEqual(["nodes"]);
+    expect(names(graph.components![0])).toEqual(["record", "position"]);
+    const record = graph.components![0].components![0];
+    expect(names(record)).toEqual(["safe", "threshold", "owners"]);
+    expect(names(record.components![2])).toEqual(["owner", "kind"]);
+  });
+
   it("exports the generated ABIs the builders read", () => {
     for (const name of ["signedTransmitterAbi", "signedReceiverAbi", "transceiverExtensionAbi", "transceiverBaseAbi", "conduitTransceiverAbi", "crossecuteGuardAbi", "safeBatchExecutorAbi"]) {
       expect(sdk).toHaveProperty(name);
