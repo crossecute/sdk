@@ -34,6 +34,9 @@ ABIS = [
     ('conduitTransceiverAbi', 'evm', 'TransmitterBase', 'IConduitTransceiver'),
     ('crossecuteGuardAbi', 'safe-guard', 'ICrossecuteGuard', 'ICrossecuteGuard'),
     ('safeBatchExecutorAbi', 'safe-guard', 'SafeBatchExecutor', 'SafeBatchExecutor'),
+    ('lzOftConduitFactoryAbi', 'evm', 'LzOftConduitFactory', 'LzOftConduitFactory'),
+    ('lzOftTransmitterAbi', 'evm', 'LzOftTransmitter', 'LzOftTransmitter'),
+    ('lzOftReceiverAbi', 'evm', 'LzOftReceiver', 'LzOftReceiver'),
 ]
 # Functions and events each trimmed ABI keeps: what the builders and the README use, plus the signed-flow
 # views. Inherited access-control, ownership and admin members are dropped. Every custom error is kept so
@@ -57,6 +60,21 @@ MEMBERS = {
     'transceiverExtensionAbi': {
         'functions': ['predictConduit', 'predictTransmitter', 'conduitSalt', 'signedAuthority'],
         'events': ['ConduitCreated', 'BootstrapSent'],
+    },
+    # The OFT conduit's own members. Its signed entry points are signedTransmitterAbi's and signedReceiverAbi's.
+    'lzOftConduitFactoryAbi': {
+        'functions': ['createTransmitter', 'predictConduit', 'conduitSalt', 'predictReceiver', 'bootstrapRoute',
+                      'destinationOf', 'isSigned', 'signedConduitBootstrap', 'PROXY_INIT_CODE_HASH', 'localChainKey',
+                      'SIGNED_BOOTSTRAP'],
+        'events': ['TransmitterCreated', 'ReceiverCreated', 'SignedConduitCreated'],
+    },
+    'lzOftTransmitterAbi': {
+        'functions': ['homeOft', 'destinationOf', 'supportsAttribute', 'LZ_OPTIONS_ATTRIBUTE'],
+        'events': [],
+    },
+    'lzOftReceiverAbi': {
+        'functions': ['homeOft', 'localOft'],
+        'events': [],
     },
     'transceiverBaseAbi': {
         'functions': ['predictReceiver', 'createTransmitter', 'bootstrap', 'quoteBootstrap', 'bootstrapSigned',
@@ -83,8 +101,50 @@ def trim(export, abi):
 # protocol's own encodings: (id in the protocol file, key in vectors/authority.json).
 VECTORS = [('eoa-select', 'single'), ('multilevel-shared', 'shared')]
 VECTOR_SOURCE = 'docs/vectors/safe-authority-updates-109.json'
+
+# Values the OFT builders repeat, derived here from the pinned protocol so the Solidity and TypeScript
+# constants are tested against protocol itself: the options attribute selector from the string literal in
+# LzMessage.sol, and the initcode hash every conduit address is CREATE2'd from, from Proxy's artifact.
+LZ_MESSAGE = 'contracts/evm/src/protocols/layerzero/LzMessage.sol'
+PROXY_ARTIFACT = 'contracts/evm/out/Proxy.sol/Proxy.json'
+OFT_PINS = 'vectors/lzoft-protocol.json'
 IMPORT = re.compile(r'"(?:@crossecute/safe-guard/|src/messaging/signed/types/|\.\./signed/types/)([^"/]+)"')
 IMPORT_AUTHORITY = re.compile(r'"src/messaging/authority/([^"/]+)"')
+
+
+def keccak256(data):
+    """Keccak-256 (Ethereum's, not SHA3-256), as hashlib has no such digest."""
+    mask, rate = (1 << 64) - 1, 136
+    rotations = [[0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61], [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]]
+    constants = [0x1, 0x8082, 0x800000000000808a, 0x8000000080008000, 0x808b, 0x80000001, 0x8000000080008081,
+                 0x8000000000008009, 0x8a, 0x88, 0x80008009, 0x8000000a, 0x8000808b, 0x800000000000008b,
+                 0x8000000000008089, 0x8000000000008003, 0x8000000000008002, 0x8000000000000080, 0x800a,
+                 0x800000008000000a, 0x8000000080008081, 0x8000000000008080, 0x80000001, 0x8000000080008008]
+
+    def rol(x, n):
+        return ((x << n) | (x >> (64 - n))) & mask if n else x
+
+    state = [[0] * 5 for _ in range(5)]
+    padded = bytearray(data) + b'\x01'
+    padded += b'\x00' * (-len(padded) % rate)
+    padded[-1] |= 0x80
+    for block in range(0, len(padded), rate):
+        for i in range(rate // 8):
+            state[i % 5][i // 5] ^= int.from_bytes(padded[block + 8 * i:block + 8 * i + 8], 'little')
+        for rc in constants:
+            c = [state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4] for x in range(5)]
+            d = [c[(x - 1) % 5] ^ rol(c[(x + 1) % 5], 1) for x in range(5)]
+            state = [[state[x][y] ^ d[x] for y in range(5)] for x in range(5)]
+            b = [[0] * 5 for _ in range(5)]
+            for x in range(5):
+                for y in range(5):
+                    b[y][(2 * x + 3 * y) % 5] = rol(state[x][y], rotations[x][y])
+            state = [[b[x][y] ^ (~b[(x + 1) % 5][y] & b[(x + 2) % 5][y]) & mask for y in range(5)] for x in range(5)]
+            state[0][0] ^= rc
+    return b''.join(state[i % 5][i // 5].to_bytes(8, 'little') for i in range(4))
+
+
+assert keccak256(b'').hex() == 'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470'
 
 
 def sha256(text):
@@ -104,6 +164,30 @@ def vectors(protocol):
     return json.dumps(picked, indent=2) + '\n'
 
 
+def committed_source(protocol, path):
+    original = (protocol / path).read_text()
+    committed = subprocess.check_output(['git', '-C', str(protocol), 'show', REVISION + ':' + path], text=True)
+    if original != committed:
+        raise SystemExit('Refusing modified protocol source: ' + path)
+    return original
+
+
+def oft_pins(protocol):
+    literal = re.search(r'OPTIONS_ATTRIBUTE = bytes4\(keccak256\("([^"]+)"\)\)', committed_source(protocol, LZ_MESSAGE))
+    if literal is None:
+        raise SystemExit(LZ_MESSAGE + ': no OPTIONS_ATTRIBUTE literal')
+    proxy = json.loads((protocol / PROXY_ARTIFACT).read_text())['bytecode']
+    if proxy['linkReferences']:
+        raise SystemExit('Proxy initcode has unlinked libraries')
+    initcode = bytes.fromhex(proxy['object'].removeprefix('0x'))
+    return json.dumps({
+        'revision': REVISION,
+        'optionsAttribute': {'source': LZ_MESSAGE, 'string': literal.group(1),
+                             'selector': '0x' + keccak256(literal.group(1).encode())[:4].hex()},
+        'proxyInitCodeHash': {'source': PROXY_ARTIFACT, 'hash': '0x' + keccak256(initcode).hex()},
+    }, indent=2) + '\n'
+
+
 def generate(protocol):
     head = subprocess.check_output(['git', '-C', str(protocol), 'rev-parse', 'HEAD'], text=True).strip()
     if head != REVISION:
@@ -120,6 +204,7 @@ def generate(protocol):
         manifest['sources'][source] = sha256(original)
         manifest['vendored'][name] = sha256(text)
     outputs[root / 'vectors/authority.json'] = vectors(protocol)
+    outputs[root / OFT_PINS] = oft_pins(protocol)
     outputs[vendor / 'manifest.json'] = json.dumps(manifest, indent=2) + '\n'
     header = f'// Generated by scripts/sync-protocol135.py; protocol {REVISION}.\n'
     abi = header + f'export const PROTOCOL_135_REVISION = "{REVISION}";\n'

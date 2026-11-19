@@ -11,8 +11,10 @@ is released. No transmitter or receiver deployment code is vendored.
 Refresh with `python3 scripts/sync-protocol135.py /path/to/protocol` after building the EVM
 and guard Forge profiles (`contracts/evm/out`, `contracts/safe-guard/out`) at the revision set
 in that script. The script is the one place the revision is written: it generates the
-manifest, `ts/src/signedAbi.ts` (ABI exports and `PROTOCOL_135_REVISION`) and
-`vectors/authority.json`. The larger ABIs keep only the functions and events listed in `MEMBERS`
+manifest, `ts/src/signedAbi.ts` (ABI exports and `PROTOCOL_135_REVISION`),
+`vectors/authority.json`, and `vectors/lzoft-protocol.json`, the LayerZero OFT options attribute selector and
+the `Proxy` initcode hash that protocol's artifacts and sources give, which the OFT builders' constants are
+tested against. The larger ABIs keep only the functions and events listed in `MEMBERS`
 in the script, plus all custom errors; add a name there to export it. The script fails if a listed
 name is absent from the protocol artifact. `--check` regenerates in memory and fails on any difference. CI runs it in the `protocol-pin` job,
 which checks out `crossecute/protocol` at the manifest revision and builds both profiles
