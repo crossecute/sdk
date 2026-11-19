@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 import {
-  type BootstrapLeaf, type ExecutionLeaf, dispatchLeafHash, dispatchTree, encodeBootstrapLeaf, encodeExecutionLeaf, executionId, publishLeavesData,
+  type BootstrapLeaf, type ExecutionLeaf, dispatchLeafHash, dispatchTreeFromHashes, encodeBootstrapLeaf, encodeExecutionLeaf, executionId, publishLeavesData,
 } from "./signed.js";
 import { array, bytesHex, object, uint, word } from "./json.js";
 
@@ -33,6 +33,11 @@ export function encodeMerkleLeaf(entry: MerkleLeaf): Hex {
  * allowed, since the receiver records it by execution ID.
  */
 export function checkMerklePlan(leaves: readonly MerkleLeaf[], receiverNonces: readonly ReceiverNonce[]): void {
+  planHashes(leaves, receiverNonces);
+}
+
+/** Validates the plan and returns each leaf's hash, so a caller encodes and hashes every leaf once. */
+function planHashes(leaves: readonly MerkleLeaf[], receiverNonces: readonly ReceiverNonce[]): Hex[] {
   if (!leaves.length) throw new Error("no leaves");
   const observed = new Map<string, bigint>();
   for (const { destination, nextNonce } of receiverNonces) {
@@ -41,12 +46,12 @@ export function checkMerklePlan(leaves: readonly MerkleLeaf[], receiverNonces: r
     if (nextNonce < 0n || nextNonce >= UINT256) throw new Error("invalid receiver nonce");
     observed.set(key, nextNonce);
   }
-  const hashes = new Set<string>(), batches = new Map<string, Hex>(), served = new Set<string>();
-  for (const entry of leaves) {
+  const seen = new Set<string>(), batches = new Map<string, Hex>(), served = new Set<string>();
+  const hashes = leaves.map((entry) => {
     const hash = dispatchLeafHash(encodeMerkleLeaf(entry));
-    if (hashes.has(hash)) throw new Error("duplicate leaf");
-    hashes.add(hash);
-    if (entry.kind !== "execution") continue;
+    if (seen.has(hash)) throw new Error("duplicate leaf");
+    seen.add(hash);
+    if (entry.kind !== "execution") return hash;
     const { leaf } = entry, key = leaf.destination.toLowerCase(), next = observed.get(key);
     if (next === undefined) throw new Error("missing receiver nonce");
     served.add(key);
@@ -54,14 +59,14 @@ export function checkMerklePlan(leaves: readonly MerkleLeaf[], receiverNonces: r
     const slot = `${key}:${leaf.nonce}`, id = executionId(leaf), prior = batches.get(slot);
     if (prior !== undefined && prior !== id) throw new Error("conflicting nonce");
     batches.set(slot, id);
-  }
+    return hash;
+  });
   for (const key of observed.keys()) if (!served.has(key)) throw new Error("receiver nonce without a leaf");
+  return hashes;
 }
 
-/** Builds the root, leaf hashes and proofs the guard's `publishLeaves` records for `leaves`, in order. */
-export function buildMerklePackage(leaves: readonly MerkleLeaf[], receiverNonces: readonly ReceiverNonce[]): MerklePackage {
-  checkMerklePlan(leaves, receiverNonces);
-  const tree = dispatchTree(leaves.map(encodeMerkleLeaf));
+function assemble(leaves: readonly MerkleLeaf[], receiverNonces: readonly ReceiverNonce[]): MerklePackage {
+  const tree = dispatchTreeFromHashes(planHashes(leaves, receiverNonces));
   return {
     version: MERKLE_PACKAGE_VERSION,
     root: tree.root,
@@ -70,10 +75,18 @@ export function buildMerklePackage(leaves: readonly MerkleLeaf[], receiverNonces
   };
 }
 
+/**
+ * Builds the root, leaf hashes and proofs the guard's `publishLeaves` records for `leaves`, in order.
+ * Hex fields come back lowercase, as `parseMerklePackage` reads them.
+ */
+export function buildMerklePackage(leaves: readonly MerkleLeaf[], receiverNonces: readonly ReceiverNonce[]): MerklePackage {
+  return merklePackageFromJSON(merklePackageToJSON(assemble(leaves, receiverNonces)));
+}
+
 /** Rebuilds the package from its leaves and throws unless every recorded root, hash and proof matches. */
 export function verifyMerklePackage(pkg: MerklePackage): void {
   if (pkg.version !== MERKLE_PACKAGE_VERSION) throw new Error(`unsupported Merkle package version ${pkg.version}`);
-  const rebuilt = buildMerklePackage(pkg.leaves.map(({ kind, leaf }) => ({ kind, leaf }) as MerkleLeaf), pkg.receiverNonces);
+  const rebuilt = assemble(pkg.leaves.map(({ kind, leaf }) => ({ kind, leaf }) as MerkleLeaf), pkg.receiverNonces);
   if (!same(pkg.root, rebuilt.root)) throw new Error("root mismatch");
   rebuilt.leaves.forEach((entry, i) => {
     const recorded = pkg.leaves[i];
@@ -89,26 +102,33 @@ export function merklePublishData(pkg: MerklePackage): Hex {
   return publishLeavesData(pkg.leaves.map(encodeMerkleLeaf));
 }
 
-const executionKeys = ["kind", "destination", "nonce", "validAfter", "deadline", "calls", "attributes", "hash", "proof"];
-const bootstrapKeys = ["kind", "destination", "validAfter", "deadline", "setupCalls", "hash", "proof"];
+type FieldType = "bytes" | "uint" | "bytes[]";
+/** One table per leaf kind drives the JSON writer, the strict reader and the exact key set. */
+const LEAF_FIELDS: Record<MerkleLeaf["kind"], readonly (readonly [string, FieldType])[]> = {
+  execution: [["destination", "bytes"], ["nonce", "uint"], ["validAfter", "uint"], ["deadline", "uint"], ["calls", "bytes"], ["attributes", "bytes[]"]],
+  bootstrap: [["destination", "bytes"], ["validAfter", "uint"], ["deadline", "uint"], ["setupCalls", "bytes"]],
+};
+
+function fieldFromJSON(v: unknown, type: FieldType, at: string): unknown {
+  if (type === "uint") return uint(v, at);
+  if (type === "bytes") return bytesHex(v, at);
+  return array(v, at).map((a, i) => bytesHex(a, `${at}[${i}]`));
+}
 
 export function merklePackageToJSON(pkg: MerklePackage): unknown {
   return {
     version: pkg.version,
     root: pkg.root,
     receiverNonces: pkg.receiverNonces.map((r) => ({ destination: r.destination, nextNonce: r.nextNonce.toString() })),
-    leaves: pkg.leaves.map((e) => {
-      const { hash, proof } = e;
-      if (e.kind === "bootstrap") {
-        const { destination, validAfter, deadline, setupCalls } = e.leaf;
-        return { kind: e.kind, destination, validAfter: validAfter.toString(), deadline: deadline.toString(), setupCalls, hash, proof };
-      }
-      const { destination, nonce, validAfter, deadline, calls, attributes } = e.leaf;
-      return {
-        kind: e.kind, destination, nonce: nonce.toString(), validAfter: validAfter.toString(), deadline: deadline.toString(),
-        calls, attributes, hash, proof,
-      };
-    }),
+    leaves: pkg.leaves.map((e) => ({
+      kind: e.kind,
+      ...Object.fromEntries(LEAF_FIELDS[e.kind].map(([name, type]) => {
+        const v = (e.leaf as Record<string, unknown>)[name];
+        return [name, type === "uint" ? (v as bigint).toString() : v];
+      })),
+      hash: e.hash,
+      proof: e.proof,
+    })),
   };
 }
 
@@ -116,7 +136,6 @@ export function merklePackageToJSON(pkg: MerklePackage): unknown {
 export function merklePackageFromJSON(raw: unknown, at = "merkle"): MerklePackage {
   const o = object(raw, ["version", "root", "receiverNonces", "leaves"], at);
   if (o.version !== MERKLE_PACKAGE_VERSION) throw new Error(`${at}.version: unsupported Merkle package version`);
-  const leafWords = (v: unknown, p: string) => array(v, p).map((w, i) => word(w, `${p}[${i}]`));
   return {
     version: MERKLE_PACKAGE_VERSION,
     root: word(o.root, `${at}.root`),
@@ -126,23 +145,14 @@ export function merklePackageFromJSON(raw: unknown, at = "merkle"): MerklePackag
     }),
     leaves: array(o.leaves, `${at}.leaves`).map((r, i): MerkleEntry => {
       const p = `${at}.leaves[${i}]`, kind = (r as { kind?: unknown } | null)?.kind;
-      if (kind === "bootstrap") {
-        const l = object(r, bootstrapKeys, p);
-        return {
-          kind, hash: word(l.hash, `${p}.hash`), proof: leafWords(l.proof, `${p}.proof`),
-          leaf: { destination: bytesHex(l.destination, "destination"), validAfter: uint(l.validAfter, "validAfter"), deadline: uint(l.deadline, "deadline"), setupCalls: bytesHex(l.setupCalls, "setupCalls") },
-        };
-      }
-      if (kind !== "execution") throw new Error(`${p}.kind: not execution or bootstrap`);
-      const l = object(r, executionKeys, p);
+      if (kind !== "execution" && kind !== "bootstrap") throw new Error(`${p}.kind: not execution or bootstrap`);
+      const fields = LEAF_FIELDS[kind], l = object(r, ["kind", ...fields.map(([name]) => name), "hash", "proof"], p);
       return {
-        kind, hash: word(l.hash, `${p}.hash`), proof: leafWords(l.proof, `${p}.proof`),
-        leaf: {
-          destination: bytesHex(l.destination, "destination"), nonce: uint(l.nonce, "nonce"), validAfter: uint(l.validAfter, "validAfter"),
-          deadline: uint(l.deadline, "deadline"), calls: bytesHex(l.calls, "calls"),
-          attributes: array(l.attributes, `${p}.attributes`).map((a, j) => bytesHex(a, `${p}.attributes[${j}]`)),
-        },
-      };
+        kind,
+        leaf: Object.fromEntries(fields.map(([name, type]) => [name, fieldFromJSON(l[name], type, `${p}.${name}`)])),
+        hash: word(l.hash, `${p}.hash`),
+        proof: array(l.proof, `${p}.proof`).map((w, j) => word(w, `${p}.proof[${j}]`)),
+      } as unknown as MerkleEntry;
     }),
   };
 }

@@ -96,8 +96,12 @@ describe("local nonce plans", () => {
     const boot = mixedLeaves[3];
     expect(build([boot], []).leaves).toHaveLength(1);
   });
-  it("matches receivers regardless of destination hex case", () => {
-    expect(build(guardLeaves(1), [{ destination: "0x000100000114".toUpperCase().replace("0X", "0x") as Hex, nextNonce: 0n }]).leaves).toHaveLength(1);
+  it("matches receivers regardless of destination hex case and returns lowercase hex", () => {
+    const pkg = build([exec("0x0001000001aa", 0n, "0x01")], [{ destination: "0x0001000001AA", nextNonce: 0n }]);
+    expect(pkg.receiverNonces[0].destination).toBe("0x0001000001aa");
+    const upper = build([exec("0x0001000001AA", 0n, "0xABCD")], [{ destination: "0x0001000001aa", nextNonce: 0n }]);
+    expect(upper.leaves[0]).toMatchObject({ leaf: { destination: "0x0001000001aa", calls: "0xabcd" } });
+    expect(m.parseMerklePackage(m.serializeMerklePackage(upper))).toEqual(upper);
   });
 });
 
@@ -124,5 +128,7 @@ describe("package JSON", () => {
     expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].nonce = "0x3"; }))).toThrow("not a decimal string");
     expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].kind = "other"; }))).toThrow("not execution or bootstrap");
     expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].proof = ["0x12"]; }))).toThrow("32-byte hex word");
+    expect(() => m.parseMerklePackage(edit((o) => { o.leaves[0].nonce = (2n ** 256n).toString(); }))).toThrow("leaves[0].nonce: exceeds uint256");
+    expect(() => m.parseMerklePackage(edit((o) => { o.receiverNonces[0].nextNonce = (2n ** 256n).toString(); }))).toThrow("exceeds uint256");
   });
 });

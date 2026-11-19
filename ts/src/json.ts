@@ -3,7 +3,9 @@ import { type Hex, getAddress, type Address } from "viem";
 /** Strict readers for exported JSON: decimal-string integers, complete hex bytes, exact key sets. */
 export function uint(v: unknown, at: string): bigint {
   if (typeof v !== "string" || !/^[0-9]+$/.test(v)) throw new Error(`${at}: not a decimal string`);
-  return BigInt(v);
+  const n = BigInt(v);
+  if (n >= 2n ** 256n) throw new Error(`${at}: exceeds uint256`);
+  return n;
 }
 
 export function bytesHex(v: unknown, at: string): Hex {
