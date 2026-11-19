@@ -316,8 +316,10 @@ transaction, Safe address, home chain ID, signature blob and nested approvals, w
 a `registerRoot` transaction. `serializeDeliveryBundle` and `parseDeliveryBundle` use a strict JSON
 layout (decimal-string integers, exact field sets, `version: 1`) and verify on both sides.
 `verifyDeliveryBundle` needs no signer or RPC: it recomputes the Safe transaction hash, requires a
-CALL whose calldata is exactly one `sendMessage` (standalone) or `registerRoot` of the package
-root, rebuilds the tree, and rejects duplicate `(childSafe, messageHash)` approvals. Signatures,
+CALL whose calldata is exactly one non-empty `sendMessage` (standalone) or `registerRoot` of the
+package root, applies the builders' chain id, nonce and value ranges, rebuilds the tree, and rejects
+duplicate `(childSafe, messageHash)` approvals. Hex fields compare case-insensitively, and the build
+functions return lowercase hex and checksummed addresses, the form the parsers read. Signatures,
 thresholds and nested approval contents are verified by the receiver, not here.
 `relayLeafFromBundle`, `submitLeafFromBundle` and `submitMessageFromBundle` produce the delivery
 calldata, so an independent submitter needs only the bundle. Bootstrap leaves are carried in the
