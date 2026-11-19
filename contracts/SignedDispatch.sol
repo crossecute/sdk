@@ -21,6 +21,7 @@ import {IERC7786GatewaySource} from "@crossecute/protocol/messaging/IErc7786.sol
 ///      a protocol package containing these interfaces is published.
 library SignedDispatch {
     error NoLeaves();
+    error IndexOutOfRange();
     error EmptySignedPayload();
 
     /// @notice Fields for guard publication. abi.encode(leaf) would add a tuple offset.
@@ -33,14 +34,31 @@ library SignedDispatch {
     }
 
     /// @notice Ordered tree with sorted sibling hashing and odd-node promotion, matching the guard.
-    function root(bytes[] memory leaves) internal pure returns (bytes32) {
+    function root(bytes[] memory leaves) internal pure returns (bytes32 treeRoot) {
+        (treeRoot,) = tree(leaves, 0);
+    }
+
+    /// @notice Sibling hashes proving `leaves[index]`; empty for a one-leaf tree.
+    function proof(bytes[] memory leaves, uint256 index) internal pure returns (bytes32[] memory siblings) {
+        (, siblings) = tree(leaves, index);
+    }
+
+    function tree(bytes[] memory leaves, uint256 index)
+        internal
+        pure
+        returns (bytes32 treeRoot, bytes32[] memory siblings)
+    {
         if (leaves.length == 0) revert NoLeaves();
+        if (index >= leaves.length) revert IndexOutOfRange();
         bytes32[] memory level = new bytes32[](leaves.length);
         for (uint256 i; i < leaves.length; ++i) {
             level[i] = keccak256(abi.encode(keccak256(leaves[i])));
         }
+        siblings = new bytes32[](64);
+        uint256 depth;
         uint256 count = level.length;
         while (count > 1) {
+            if ((index ^ 1) < count) siblings[depth++] = level[index ^ 1];
             for (uint256 i; i < count; i += 2) {
                 if (i + 1 == count) {
                     level[i / 2] = level[i];
@@ -50,8 +68,12 @@ library SignedDispatch {
                 }
             }
             count = (count + 1) / 2;
+            index >>= 1;
         }
-        return level[0];
+        assembly ("memory-safe") {
+            mstore(siblings, depth)
+        }
+        treeRoot = level[0];
     }
 
     function sendData(bytes memory destination, bytes memory calls, bytes[] memory attributes)
