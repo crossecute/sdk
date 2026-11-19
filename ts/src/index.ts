@@ -1,3 +1,4 @@
+export * from "./bundle.js";
 export * from "./encoding.js";
 export * from "./merkle.js";
 export * from "./plan.js";
