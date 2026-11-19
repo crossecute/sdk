@@ -109,10 +109,11 @@ export function lzOftConduitSalt(f: LzOftConduitFields): Hex {
 
 /**
  * `LzOftConduitFactory.predictConduit` for the factory at `factory`. The conduit's receiver is at this same
- * address on every destination. `proxyInitCodeHash` defaults to the pinned protocol revision's; pass the deployed
- * factory's `PROXY_INIT_CODE_HASH()` to follow what is deployed. Compare with the factory's own `predictConduit`
- * before funding or relying on the address.
+ * address on every destination. `proxyInitCodeHash` is required: pass the deployed factory's
+ * `PROXY_INIT_CODE_HASH()`, which is what its own `predictConduit` hashes. `LZ_OFT_PROXY_INIT_CODE_HASH` is the
+ * pinned revision's value, for tests and for checking the deployed one.
  */
-export function predictLzOftConduit(factory: Address, f: LzOftConduitFields, proxyInitCodeHash: Hex = LZ_OFT_PROXY_INIT_CODE_HASH): Address {
+export function predictLzOftConduit(factory: Address, f: LzOftConduitFields, proxyInitCodeHash: Hex): Address {
+  if (!isHex(proxyInitCodeHash) || size(proxyInitCodeHash) !== 32) throw new Error("proxy initcode hash must be 32 bytes");
   return getCreate2Address({ from: factory, salt: lzOftConduitSalt(f), bytecodeHash: proxyInitCodeHash });
 }

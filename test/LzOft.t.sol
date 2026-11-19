@@ -44,6 +44,7 @@ contract LzOftTest is Test {
     uint256 constant HOME_CHAIN_ID = 252;
     uint32 constant HOME_EID = 30255;
     uint256 constant DESTINATIONS = 5;
+    bytes32 constant PINNED = LzOft.PROXY_INIT_CODE_HASH;
 
     function _chainIds() internal pure returns (uint256[DESTINATIONS] memory) {
         return [uint256(10), 8453, 42_161, 137, 56];
@@ -175,7 +176,7 @@ contract LzOftTest is Test {
         bytes32 s = keccak256(abi.encode(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot));
         assertEq(LzOft.conduitSalt(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot), s);
         assertEq(
-            LzOft.predictConduit(FACTORY, OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot),
+            LzOft.predictConduit(FACTORY, OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot, PINNED),
             address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), FACTORY, s, LzOft.PROXY_INIT_CODE_HASH)))))
         );
     }
@@ -183,14 +184,15 @@ contract LzOftTest is Test {
     function test_theAddressMovesWithEveryBoundField() public pure {
         bytes32 root = keccak256("root");
         bytes32 key = ChainKey.forEvm(HOME_CHAIN_ID);
-        address base = LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, HOME_OFT, root);
-        assertNotEq(base, LzOft.predictConduit(address(1), OWNER, SALT, key, HOME_EID, HOME_OFT, root));
-        assertNotEq(base, LzOft.predictConduit(FACTORY, address(1), SALT, key, HOME_EID, HOME_OFT, root));
-        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, bytes32(0), key, HOME_EID, HOME_OFT, root));
-        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, bytes32(0), HOME_EID, HOME_OFT, root));
-        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID + 1, HOME_OFT, root));
-        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, address(1), root));
-        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, HOME_OFT, bytes32(0)));
+        address base = LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, HOME_OFT, root, PINNED);
+        assertNotEq(base, LzOft.predictConduit(address(1), OWNER, SALT, key, HOME_EID, HOME_OFT, root, PINNED));
+        assertNotEq(base, LzOft.predictConduit(FACTORY, address(1), SALT, key, HOME_EID, HOME_OFT, root, PINNED));
+        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, bytes32(0), key, HOME_EID, HOME_OFT, root, PINNED));
+        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, bytes32(0), HOME_EID, HOME_OFT, root, PINNED));
+        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID + 1, HOME_OFT, root, PINNED));
+        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, address(1), root, PINNED));
+        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, HOME_OFT, bytes32(0), PINNED));
+        assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, HOME_OFT, root, bytes32(0)));
     }
 
     function _destinationsJson(ILzOftConduitFactory.Leaf[] memory leaves, uint256[] memory chainIds)
@@ -264,10 +266,12 @@ contract LzOftTest is Test {
         return string.concat(
             '"createData":"',
             vm.toString(LzOft.createTransmitterData(SALT, HOME_OFT, three)),
+            '","proxyInitCodeHash":"',
+            vm.toString(PINNED),
             '","conduitSalt":"',
             vm.toString(LzOft.conduitSalt(OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot)),
             '","conduit":"',
-            vm.toString(LzOft.predictConduit(FACTORY, OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot)),
+            vm.toString(LzOft.predictConduit(FACTORY, OWNER, SALT, homeKey, HOME_EID, HOME_OFT, destRoot, PINNED)),
             '"'
         );
     }

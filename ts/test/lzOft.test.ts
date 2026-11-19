@@ -11,7 +11,7 @@ import { lzOftConduitFactoryAbi, signedTransmitterAbi } from "../src/signedAbi.j
 
 const read = (path: string) => JSON.parse(readFileSync(new URL(path, new URL("../../", import.meta.url)), "utf8"));
 const vector = read("vectors/lzoft.json") as {
-  options: Hex; optionsAttribute: Hex; roots: Record<string, Hex>; factory: Address; createData: Hex; conduitSalt: Hex; conduit: Address;
+  options: Hex; optionsAttribute: Hex; proxyInitCodeHash: Hex; roots: Record<string, Hex>; factory: Address; createData: Hex; conduitSalt: Hex; conduit: Address;
   destinations: { chainId: string; chainKey: Hex; eid: number; oft: Address; leafHash: Hex }[];
   home: { owner: Address; salt: Hex; chainId: string; chainKey: Hex; eid: number; oft: Address };
 };
@@ -110,18 +110,23 @@ describe("conduit creation and address against the Solidity builders", () => {
   });
   it("derives the salt and the address from the six fields and the factory", () => {
     expect(lzOftConduitSalt({ ...fields, destRoot: threeRoot })).toBe(vector.conduitSalt);
-    expect(predictLzOftConduit(vector.factory, { ...fields, destRoot: threeRoot }).toLowerCase()).toBe(vector.conduit.toLowerCase());
+    expect(predictLzOftConduit(vector.factory, { ...fields, destRoot: threeRoot }, vector.proxyInitCodeHash).toLowerCase()).toBe(vector.conduit.toLowerCase());
   });
   it("moves the address with each bound field, the factory and the initcode hash", () => {
     const base = { ...fields, destRoot: threeRoot };
-    const at = predictLzOftConduit(vector.factory, base);
+    const at = predictLzOftConduit(vector.factory, base, vector.proxyInitCodeHash);
     const other = "0x0000000000000000000000000000000000000001" as Address;
     for (const changed of [
       { ...base, owner: other }, { ...base, salt: zeroHash }, { ...base, homeChainKey: zeroHash }, { ...base, homeEid: base.homeEid + 1 },
       { ...base, homeOft: other }, { ...base, destRoot: lzOftRoot(leaves.slice(0, 2)) },
-    ]) expect(predictLzOftConduit(vector.factory, changed)).not.toBe(at);
-    expect(predictLzOftConduit(other, base)).not.toBe(at);
+    ]) expect(predictLzOftConduit(vector.factory, changed, vector.proxyInitCodeHash)).not.toBe(at);
+    expect(predictLzOftConduit(other, base, vector.proxyInitCodeHash)).not.toBe(at);
     expect(predictLzOftConduit(vector.factory, base, zeroHash)).not.toBe(at);
+  });
+  it("takes the initcode hash explicitly and requires 32 bytes", () => {
+    expect(vector.proxyInitCodeHash).toBe(LZ_OFT_PROXY_INIT_CODE_HASH);
+    expect(() => predictLzOftConduit(vector.factory, { ...fields, destRoot: threeRoot }, "0x1234")).toThrow("32 bytes");
+    expect(() => (predictLzOftConduit as (...a: unknown[]) => unknown)(vector.factory, { ...fields, destRoot: threeRoot })).toThrow("32 bytes");
   });
   it("wraps the call in the owner Safe's CALL to the factory", () => {
     const owner = vector.home.owner;

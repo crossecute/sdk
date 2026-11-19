@@ -411,8 +411,9 @@ import {
 const home = { chainKey: chainKey(homeChainId), eid: homeEid };
 const leaves = lzOftLeaves(destinations, home); // [{ chainId, eid, oft }], sorted by chain key
 const destRoot = lzOftRoot(leaves, home);
-const conduit = predictLzOftConduit(factory, { owner: ownerSafe, salt, homeChainKey: home.chainKey, homeEid, homeOft, destRoot });
-// Compare with `predictConduit` on the deployed factory (lzOftConduitFactoryAbi) before relying on it.
+// proxyInitCodeHash is the deployed factory's PROXY_INIT_CODE_HASH() (lzOftConduitFactoryAbi).
+const conduit = predictLzOftConduit(factory, { owner: ownerSafe, salt, homeChainKey: home.chainKey, homeEid, homeOft, destRoot }, proxyInitCodeHash);
+// Compare with `predictConduit` on the deployed factory before relying on it.
 const creation = lzOftCreateTx(homeChainId, ownerSafe, factory, safeNonce, salt, homeOft, leaves); // Safe CALL
 
 const attributes = [lzOptionsAttribute(rawOptions)];
@@ -450,11 +451,12 @@ factory afterwards. Plan and simulate plain OFT conduits elsewhere: `CrossecuteS
 conduit through the registry, in which this binding has no route.
 
 **Addresses.** `predictLzOftConduit` and `LzOft.predictConduit` take the factory address, which is the
-same on every chain it is deployed to, and hash the `Proxy` initcode of the pinned protocol revision
-(`LZ_OFT_PROXY_INIT_CODE_HASH`), taken from protocol's own build artifact, not compiled locally. Pass
-the deployed factory's `PROXY_INIT_CODE_HASH()` as the last argument to follow a different build. The
-conduit's receiver is at the conduit's own address on every destination: the factory's
-`predictReceiver` returns the calling conduit, so the recipient of a send is
+same on every chain it is deployed to, and `proxyInitCodeHash`, which is required. Pass the deployed
+factory's `PROXY_INIT_CODE_HASH()`: it is what the factory's own `predictConduit` hashes, and a different
+build of `Proxy` gives different addresses. `LZ_OFT_PROXY_INIT_CODE_HASH` and `LzOft.PROXY_INIT_CODE_HASH`
+are the pinned protocol revision's value, taken from protocol's own build artifact, for tests and for
+checking the deployed one. The conduit's receiver is at the conduit's own address on every destination:
+the factory's `predictReceiver` returns the calling conduit, so the recipient of a send is
 `encodeEvm(destinationChainId, conduit)`.
 
 **Sends carry no tokens.** The conduit sets `amountLD` and `minAmountLD` to zero for every send and

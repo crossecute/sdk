@@ -26,8 +26,9 @@ library LzOft {
     bytes4 internal constant OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
 
     /// @dev `keccak256` of `Proxy`'s initcode at the pinned protocol revision, which a conduit's CREATE2 address
-    ///      hashes. The deployed factory's `PROXY_INIT_CODE_HASH()` is authoritative. test/LzOft.t.sol compares
-    ///      this with vectors/lzoft-protocol.json, which scripts/sync-protocol135.py derives from protocol.
+    ///      hashes. `predictConduit` takes the hash as an argument; the deployed factory's `PROXY_INIT_CODE_HASH()`
+    ///      is the value to pass. test/LzOft.t.sol compares this with vectors/lzoft-protocol.json, which
+    ///      scripts/sync-protocol135.py derives from protocol.
     bytes32 internal constant PROXY_INIT_CODE_HASH = 0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6;
 
     error EmptyOptions();
@@ -122,8 +123,9 @@ library LzOft {
         return keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot));
     }
 
-    /// @notice `LzOftConduitFactory.predictConduit` for the factory at `factory`, with the pinned initcode hash.
-    ///         The receiver is at the same address on every destination.
+    /// @notice `LzOftConduitFactory.predictConduit` for the factory at `factory`, hashing `proxyInitCodeHash`, which
+    ///         is the deployed factory's `PROXY_INIT_CODE_HASH()`. The receiver is at the same address on every
+    ///         destination.
     function predictConduit(
         address factory,
         address owner,
@@ -131,10 +133,11 @@ library LzOft {
         bytes32 homeChainKey,
         uint32 homeEid,
         address homeOft,
-        bytes32 destRoot
+        bytes32 destRoot,
+        bytes32 proxyInitCodeHash
     ) internal pure returns (address) {
         return Create2.computeAddress(
-            conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot), PROXY_INIT_CODE_HASH, factory
+            conduitSalt(owner, salt, homeChainKey, homeEid, homeOft, destRoot), proxyInitCodeHash, factory
         );
     }
 }
