@@ -87,7 +87,6 @@ export function verifyDeliveryBundle(bundle: DeliveryBundle): void {
 function executionAt(bundle: DeliveryBundle, index: number) {
   const entry = bundle.merkle?.leaves[index];
   if (!entry) throw new Error("no such Merkle leaf");
-  if (entry.kind !== "execution") throw new Error("not an execution leaf");
   return entry;
 }
 
