@@ -35,6 +35,50 @@ ABIS = [
     ('crossecuteGuardAbi', 'safe-guard', 'ICrossecuteGuard', 'ICrossecuteGuard'),
     ('safeBatchExecutorAbi', 'safe-guard', 'SafeBatchExecutor', 'SafeBatchExecutor'),
 ]
+# Functions and events each trimmed ABI keeps: what the builders and the README use, plus the signed-flow
+# views. Inherited access-control, ownership and admin members are dropped. Every custom error is kept so
+# viem can decode reverts. A name missing from the artifact fails the sync. The other ABIs are small and whole.
+MEMBERS = {
+    'signedTransmitterAbi': {
+        'functions': ['sendMessage', 'quoteMessage', 'bootstrap', 'bootstrapPayload', 'payloadForCalls', 'quoteBootstrap',
+                      'quoteSignedMessage', 'quoteRelay', 'quoteAuthority', 'relayLeaf', 'relayAuthority', 'registerRoot',
+                      'isRootRegistered', 'isLeafRelayed', 'isSigned', 'initializeSigned', 'isBootstrapped', 'isBootstrappedOn',
+                      'destinationReceiverOn', 'recipientOn', 'owner', 'execute'],
+        'events': ['MessageSent', 'LeafRelayed', 'AuthorityRelayed', 'RootRegistered', 'DestinationBootstrapped',
+                   'Executed', 'SignedTransmitterInitialized'],
+    },
+    'signedReceiverAbi': {
+        'functions': ['submitMessage', 'submitLeaf', 'submitAuthority', 'submitAuthorityBatch', 'selection', 'graph',
+                      'record', 'authorityGraph', 'authorityRecords', 'nextNonce', 'executionAt', 'isMessageExecuted',
+                      'isSourceTransmitter', 'sourceTransmitter', 'SOURCE_AUTHORITY_GUARD', 'initializeSigned'],
+        'events': ['LeafExecuted', 'MessageExecuted', 'DuplicateMessage', 'AuthoritySelected', 'SignedReceiverInitialized',
+                   'ReceiverInitialized', 'ReceiverExecuted', 'Delivered'],
+    },
+    'transceiverExtensionAbi': {
+        'functions': ['predictConduit', 'predictTransmitter', 'conduitSalt', 'signedAuthority'],
+        'events': ['ConduitCreated', 'BootstrapSent'],
+    },
+    'transceiverBaseAbi': {
+        'functions': ['predictReceiver', 'createTransmitter', 'bootstrap', 'quoteBootstrap', 'bootstrapSigned',
+                      'quoteBootstrapSigned'],
+        'events': ['ConduitCreated', 'BootstrapSent'],
+    },
+}
+
+
+def trim(export, abi):
+    keep = MEMBERS.get(export)
+    if keep is None:
+        return abi
+    for kind, key in (('function', 'functions'), ('event', 'events')):
+        missing = set(keep[key]) - {e['name'] for e in abi if e['type'] == kind}
+        if missing:
+            raise SystemExit(f'{export}: protocol artifact has no {kind} {sorted(missing)}')
+    return [e for e in abi if e['type'] == 'error'
+            or e['type'] == 'function' and e['name'] in keep['functions']
+            or e['type'] == 'event' and e['name'] in keep['events']]
+
+
 # Vectors copied from docs/vectors/safe-authority-updates-109.json so the builders are checked against
 # protocol's own encodings: (id in the protocol file, key in vectors/authority.json).
 VECTORS = [('eoa-select', 'single'), ('multilevel-shared', 'shared')]
@@ -81,8 +125,7 @@ def generate(protocol):
     abi = header + f'export const PROTOCOL_135_REVISION = "{REVISION}";\n'
     for export, profile, artifact_file, contract in ABIS:
         artifact = json.loads((protocol / f'contracts/{profile}/out/{artifact_file}.sol/{contract}.json').read_text())
-        # The complete ABI keeps events, views and custom errors available to viem.
-        abi += 'export const ' + export + ' = ' + json.dumps(artifact['abi'], separators=(',', ':')) + ' as const;\n'
+        abi += 'export const ' + export + ' = ' + json.dumps(trim(export, artifact['abi']), separators=(',', ':')) + ' as const;\n'
     outputs[root / 'ts/src/signedAbi.ts'] = abi
     return outputs
 

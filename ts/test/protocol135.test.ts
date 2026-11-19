@@ -65,6 +65,24 @@ describe("protocol #135 snapshot", () => {
     expect(names(record.components![2])).toEqual(["owner", "kind"]);
   });
 
+  it("keeps every function the README and the builders use in the trimmed ABIs", () => {
+    const has = (abi: readonly { type: string; name?: string }[], ...fns: string[]) => {
+      const present = abi.filter((f) => f.type === "function").map((f) => f.name);
+      for (const fn of fns) expect(present, fn).toContain(fn);
+    };
+    has(sdk.signedTransmitterAbi, "quoteBootstrap", "quoteRelay", "relayAuthority", "quoteAuthority", "isSigned", "relayLeaf", "registerRoot", "quoteSignedMessage", "sendMessage", "bootstrap");
+    has(sdk.signedReceiverAbi, "selection", "graph", "submitLeaf", "submitMessage", "submitAuthority");
+    has(sdk.transceiverBaseAbi, "predictReceiver", "bootstrapSigned", "quoteBootstrapSigned");
+    has(sdk.conduitTransceiverAbi, "predictReceiver", "signedAuthority");
+    has(sdk.transceiverExtensionAbi, "predictConduit", "signedAuthority");
+    has(sdk.crossecuteGuardAbi, "publishLeaves");
+    has(sdk.safeBatchExecutorAbi, "execute");
+    for (const abi of [sdk.signedTransmitterAbi, sdk.signedReceiverAbi, sdk.transceiverBaseAbi, sdk.transceiverExtensionAbi]) {
+      expect(abi.some((f) => f.type === "error")).toBe(true);
+      expect(abi.filter((f) => f.type === "function").map((f) => f.name)).not.toContain("grantRole");
+    }
+  });
+
   it("exports the generated ABIs the builders read", () => {
     for (const name of ["signedTransmitterAbi", "signedReceiverAbi", "transceiverExtensionAbi", "transceiverBaseAbi", "conduitTransceiverAbi", "crossecuteGuardAbi", "safeBatchExecutorAbi"]) {
       expect(sdk).toHaveProperty(name);

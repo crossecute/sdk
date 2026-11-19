@@ -180,7 +180,8 @@ The signed API targets protocol revision
 the tip of #135. It includes `SafeTxEvidence { signedSafeTx, nestedApprovals }`, `SignedSafeTx`,
 `NestedSafeApproval`, `AuthorityGraph`, execution leaves, `SignedBootstrap`, and the current
 transmitter, receiver (including nonce and authority views), transceiver, guard, and
-`SafeBatchExecutor` ABIs. The published protocol 0.1.0
+`SafeBatchExecutor` ABIs, trimmed to the functions and events the builders and this document use
+plus every custom error, so reverts decode; inherited access-control and admin members are omitted. The published protocol 0.1.0
 package predates these interfaces: the SDK includes a small MIT compatibility snapshot
 under `contracts/vendor/protocol135`, with original-source checksums and a refresh script;
 `ts/test/protocol135.test.ts` fails if the manifest, vendored files, generated ABIs and
