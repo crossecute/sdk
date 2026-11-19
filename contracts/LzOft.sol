@@ -4,9 +4,11 @@ pragma solidity ^0.8.28;
 import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {SignedDispatch} from "./SignedDispatch.sol";
 
-/// @notice The factory entry point a `layerzero-oft` conduit is created through; protocol revision 3169f8c.
-///         The factory is `LzOftConduitFactory`, one address on every chain.
-interface ILzOftConduitFactory {
+/// @notice The factory's creation entry point, `LzOftConduitFactory.createTransmitter` and its `Leaf`, at protocol
+///         revision 3169f8c. Named apart from protocol's `ILzOftConduitFactory`, which declares other members and
+///         is not vendored. The selector and layout are checked against the pinned ABI by ts/test/lzOft.test.ts
+///         and against the compiled factory by scripts/check-lzoft-vectors.py.
+interface ILzOftCreate {
     struct Leaf {
         bytes32 chainKey;
         uint32 eid;
@@ -48,31 +50,28 @@ library LzOft {
     }
 
     /// @notice `LzOftMessage.leaf`. Hashed twice, like every leaf here.
-    function leafHash(ILzOftConduitFactory.Leaf memory leaf) internal pure returns (bytes32) {
+    function leafHash(ILzOftCreate.Leaf memory leaf) internal pure returns (bytes32) {
         return keccak256(abi.encode(keccak256(abi.encode(leaf.chainKey, leaf.eid, leaf.oft))));
     }
 
     /// @notice Offline form of the factory's `_checkLeaves`, in its order, without the checks that read the home
     ///         OFT's peers. Reverts as the factory would.
-    function checkLeaves(ILzOftConduitFactory.Leaf[] memory leaves) internal pure {
+    function checkLeaves(ILzOftCreate.Leaf[] memory leaves) internal pure {
         _check(leaves, false, 0, 0);
     }
 
     /// @notice `checkLeaves`, and that no leaf names the home chain or the home's eid.
-    function checkLeaves(ILzOftConduitFactory.Leaf[] memory leaves, bytes32 homeChainKey, uint32 homeEid)
-        internal
-        pure
-    {
+    function checkLeaves(ILzOftCreate.Leaf[] memory leaves, bytes32 homeChainKey, uint32 homeEid) internal pure {
         _check(leaves, true, homeChainKey, homeEid);
     }
 
-    function _check(ILzOftConduitFactory.Leaf[] memory leaves, bool hasHome, bytes32 homeChainKey, uint32 homeEid)
+    function _check(ILzOftCreate.Leaf[] memory leaves, bool hasHome, bytes32 homeChainKey, uint32 homeEid)
         private
         pure
     {
         if (leaves.length == 0) revert NoDestinations();
         for (uint256 i; i < leaves.length; ++i) {
-            ILzOftConduitFactory.Leaf memory l = leaves[i];
+            ILzOftCreate.Leaf memory l = leaves[i];
             if (i != 0 && l.chainKey <= leaves[i - 1].chainKey) revert LeavesNotSorted(i);
             if (l.eid == 0 || l.oft == address(0) || (hasHome && (l.chainKey == homeChainKey || l.eid == homeEid))) {
                 revert BadLeaf(i);
@@ -82,7 +81,7 @@ library LzOft {
 
     /// @notice `LzOftMessage.root` over `leaves`, which must be in ascending `chainKey` order: the
     ///         `destRoot` the factory computes from the same list and binds into the conduit's address.
-    function root(ILzOftConduitFactory.Leaf[] memory leaves) internal pure returns (bytes32 destRoot) {
+    function root(ILzOftCreate.Leaf[] memory leaves) internal pure returns (bytes32 destRoot) {
         checkLeaves(leaves);
         bytes32[] memory hashes = new bytes32[](leaves.length);
         for (uint256 i; i < leaves.length; ++i) {
@@ -92,7 +91,7 @@ library LzOft {
     }
 
     /// @notice `root`, with the checks that need the home chain's key and eid.
-    function root(ILzOftConduitFactory.Leaf[] memory leaves, bytes32 homeChainKey, uint32 homeEid)
+    function root(ILzOftCreate.Leaf[] memory leaves, bytes32 homeChainKey, uint32 homeEid)
         internal
         pure
         returns (bytes32)
@@ -102,13 +101,13 @@ library LzOft {
     }
 
     /// @notice `createTransmitter` calldata. The owner Safe sends it as a CALL: the owner is `msg.sender`.
-    function createTransmitterData(bytes32 salt, address homeOft, ILzOftConduitFactory.Leaf[] memory leaves)
+    function createTransmitterData(bytes32 salt, address homeOft, ILzOftCreate.Leaf[] memory leaves)
         internal
         pure
         returns (bytes memory)
     {
         checkLeaves(leaves);
-        return abi.encodeCall(ILzOftConduitFactory.createTransmitter, (salt, homeOft, leaves));
+        return abi.encodeCall(ILzOftCreate.createTransmitter, (salt, homeOft, leaves));
     }
 
     /// @notice `LzOftConduitFactory.conduitSalt`.
