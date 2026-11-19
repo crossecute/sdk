@@ -1,40 +1,49 @@
 import {
   type Address, type Hex, concat, encodeAbiParameters, encodeFunctionData,
-  keccak256, parseAbiParameters, zeroAddress, hashTypedData,
+  keccak256, stringToHex, zeroAddress, hashTypedData, zeroHash,
 } from "viem";
+import { encodeBootstrap } from "./encoding.js";
 import { type SafeTx, type SafeTxEnvelope } from "./safeTx.js";
 import { signedTransmitterAbi, signedReceiverAbi, crossecuteGuardAbi, safeBatchExecutorAbi } from "./signedAbi.js";
 
 export const WIRE_STANDALONE = 1n;
 export const WIRE_MERKLE = 2n;
+/** Leading word of an authority submission. This package does not build authority submissions (sdk#14). */
+export const WIRE_AUTHORITY = 3n;
+/** Immediate owners allowed per Safe in a selected graph. */
+export const MAX_SAFE_OWNERS = 16;
 
-export const PROTOCOL_135_REVISION = "5d7be13e3afccb88c8a1b8a298bc56709706f76c";
 export type SafeOwner = { owner: Address; kind: 0 | 1 };
 export type SafeAuthorityRecord = { safe: Address; threshold: bigint; owners: readonly SafeOwner[] };
 export type SignedSafeTx = { safeTx: SafeTx; signatures: Hex };
 export type NestedSafeApproval = { childSafe: Address; messageHash: Hex; approval: SignedSafeTx };
 export type SafeTxEvidence = { signedSafeTx: SignedSafeTx; nestedApprovals: readonly NestedSafeApproval[] };
 export type ExecutionLeaf = { destination: Hex; nonce: bigint; validAfter: bigint; deadline: bigint; calls: Hex; attributes: readonly Hex[] };
-export type BootstrapLeaf = { destination: Hex; validAfter: bigint; deadline: bigint; setupCalls: Hex };
-export type SignedBootstrap = { evidence: SafeTxEvidence; records: readonly SafeAuthorityRecord[] };
+/** `position` is zero for the root and the selected update head of that Safe for every descendant. */
+export type AuthorityNode = { record: SafeAuthorityRecord; position: Hex };
+/** Nodes in canonical depth-first order; `nodes[0]` is the owner Safe. */
+export type AuthorityGraph = { nodes: readonly AuthorityNode[] };
+/** `setupCalls` is `abi.encode(Call[])`, as `encodeCalls` returns it. */
+export type SignedBootstrap = { guard: Address; updateHead: Hex; authority: AuthorityGraph; setupCalls: Hex };
 
 // Take tuple definitions from the pinned protocol ABI; no independent copy of nested ABI layouts.
 const relay = signedTransmitterAbi.find((f) => f.type === "function" && f.name === "relayLeaf")!;
 const evidenceType = relay.inputs[0];
 const executionType = relay.inputs[1];
-const bootstrapType = parseAbiParameters("(bytes destination, uint256 validAfter, uint256 deadline, bytes setupCalls)")[0];
-const recordsType = parseAbiParameters("(address safe, uint256 threshold, (address owner, uint8 kind)[] owners)[]")[0];
+const graphType = signedReceiverAbi.find((f) => f.type === "function" && f.name === "graph")!.outputs[0];
+const recordType = graphType.components[0].components[0];
+const GRAPH_DOMAIN = keccak256(stringToHex("Crossecute.AuthorityGraph.v1"));
+const bootstrapType = [{ type: "tuple", components: [
+  { name: "guard", type: "address" }, { name: "updateHead", type: "bytes32" },
+  { name: "authority", type: "bytes" }, { name: "setupCalls", type: "bytes" },
+] }] as const;
 
 /** The guard publishes encoded fields, not abi.encode(struct), for each leaf. */
 export function encodeExecutionLeaf(leaf: ExecutionLeaf): Hex {
   return encodeAbiParameters(executionType.components, [leaf.destination, leaf.nonce, leaf.validAfter, leaf.deadline, leaf.calls, leaf.attributes]);
 }
-export function encodeBootstrapLeaf(leaf: BootstrapLeaf): Hex {
-  return encodeAbiParameters(bootstrapType.components, [leaf.destination, leaf.validAfter, leaf.deadline, leaf.setupCalls]);
-}
 export function dispatchLeafHash(encodedFields: Hex): Hex { return keccak256(keccak256(encodedFields)); }
 export function executionLeafHash(leaf: ExecutionLeaf): Hex { return dispatchLeafHash(encodeExecutionLeaf(leaf)); }
-export function bootstrapLeafHash(leaf: BootstrapLeaf): Hex { return dispatchLeafHash(encodeBootstrapLeaf(leaf)); }
 /** Replay identity intentionally excludes delivery attributes, matching DispatchLeaves.executionId. */
 export function executionId(leaf: ExecutionLeaf): Hex {
   return dispatchLeafHash(encodeAbiParameters(executionType.components.slice(0, 5), [leaf.destination, leaf.nonce, leaf.validAfter, leaf.deadline, leaf.calls]));
@@ -70,14 +79,38 @@ export function verifyDispatchProof(hash: Hex, proof: readonly Hex[], root: Hex)
   return proof.reduce(pair, hash).toLowerCase() === root.toLowerCase();
 }
 
-/** Hashes supplied canonical records. Use validateAuthorityRecords first for untrusted input. */
-export function authorityGraphHash(records: readonly SafeAuthorityRecord[]): Hex {
-  return keccak256(encodeAbiParameters([recordsType], [records]));
+/** `abi.encode(AuthorityGraph)`, the `authority` field of a bootstrap. */
+export function encodeAuthorityGraph(graph: AuthorityGraph): Hex {
+  return encodeAbiParameters([graphType], [graph]);
 }
-/** Validates recorded owner kinds/thresholds and first-visit DFS order without live RPC queries. */
-export function validateAuthorityRecords(records: readonly SafeAuthorityRecord[], root: Address): void {
-  if (!records.length || records[0].safe.toLowerCase() !== root.toLowerCase()) throw new Error("wrong authority root");
-  const bySafe = new Map(records.map(r => [r.safe.toLowerCase(), r]));
+/** `AuthorityUpdateEncoding.recordHash`. */
+export function authorityRecordHash(record: SafeAuthorityRecord): Hex {
+  return keccak256(encodeAbiParameters([recordType], [record]));
+}
+/**
+ * `AuthorityUpdateEncoding.graphHash`: the value the guard stores as `selection(safe).authorityHash` and
+ * a bootstrap must match. It covers each node's record hash and position, and the source chain.
+ */
+export function authorityGraphHash(sourceChainId: bigint, graph: AuthorityGraph): Hex {
+  const entries = graph.nodes.map((n) => [authorityRecordHash(n.record), n.position] as const);
+  return keccak256(encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "uint256" }, { type: "tuple[]", components: [{ type: "bytes32" }, { type: "bytes32" }] }],
+    [GRAPH_DOMAIN, sourceChainId, entries],
+  ));
+}
+/**
+ * Offline form of the receiver's bootstrap shape checks: the root is `root` at position zero, descendants
+ * carry nonzero positions, every Safe has at most 16 distinct owners and a valid threshold, owner kinds are
+ * consistent, and nodes are the first-visit depth-first traversal from the root with no cycle, duplicate or
+ * unreachable node. Positions are not checked against any guard.
+ */
+export function validateAuthorityGraph(graph: AuthorityGraph, root: Address): void {
+  const { nodes } = graph;
+  if (!nodes.length || nodes[0].record.safe.toLowerCase() !== root.toLowerCase()) throw new Error("wrong authority root");
+  if (nodes[0].position !== zeroHash) throw new Error("root position not zero");
+  if (nodes.slice(1).some((n) => n.position === zeroHash)) throw new Error("unproven descendant position");
+  const records = nodes.map((n) => n.record);
+  const bySafe = new Map(records.map((r) => [r.safe.toLowerCase(), r]));
   if (bySafe.size !== records.length) throw new Error("duplicate authority record");
   const visited = new Set<string>(), open = new Set<string>();
   let index = 0;
@@ -88,6 +121,7 @@ export function validateAuthorityRecords(records: readonly SafeAuthorityRecord[]
     const r = bySafe.get(key);
     if (!r) throw new Error("missing authority record");
     if (records[index++] !== r) throw new Error("noncanonical authority order");
+    if (r.owners.length > MAX_SAFE_OWNERS) throw new Error("too many owners");
     if (r.threshold < 1n || r.threshold > BigInt(r.owners.length)) throw new Error("invalid threshold");
     visited.add(key); open.add(key);
     const owners = new Set<string>();
@@ -103,10 +137,6 @@ export function validateAuthorityRecords(records: readonly SafeAuthorityRecord[]
   visit(root);
   if (visited.size !== records.length) throw new Error("unreachable authority record");
 }
-/** This is the conduit salt commitment, not a CREATE2 address prediction. */
-export function signedConduitSalt(owner: Address, userSalt: Hex, homeChainKey: Hex, graphHash: Hex): Hex {
-  return keccak256(encodeAbiParameters(parseAbiParameters("address, bytes32, bytes32, bytes32"), [owner, userSalt, homeChainKey, graphHash]));
-}
 /** Safe child-domain hash approved by SignMessageLib. `message` is the original message bytes. */
 export function safeMessageHash(chainId: bigint, childSafe: Address, message: Hex): Hex {
   return hashTypedData({ domain: { chainId, verifyingContract: childSafe }, primaryType: "SafeMessage", types: { SafeMessage: [{ name: "message", type: "bytes" }] }, message: { message } });
@@ -119,14 +149,20 @@ export function encodeStandaloneWire(evidence: SafeTxEvidence): Hex {
 export function encodeMerkleWire(evidence: SafeTxEvidence, leaf: ExecutionLeaf, proof: readonly Hex[]): Hex {
   return encodeAbiParameters([{ type: "uint256" }, ...relay.inputs], [WIRE_MERKLE, evidence, leaf, proof]);
 }
+/**
+ * `abi.encode(SignedBootstrap(guard, updateHead, abi.encode(graph), setupCalls))`. The graph must be the
+ * guard's selected graph for `updateHead`; the transmitter checks its hash against the guard and the
+ * receiver checks its shape. The graph's root is the conduit's owner Safe.
+ */
 export function encodeSignedBootstrap(body: SignedBootstrap): Hex {
-  return encodeAbiParameters([{ type: "tuple", components: [{ ...evidenceType, name: "evidence" }, { ...recordsType, name: "records" }] }], [body]);
+  if (body.updateHead === zeroHash) throw new Error("zero update head");
+  if (!body.authority.nodes.length) throw new Error("wrong authority root");
+  validateAuthorityGraph(body.authority, body.authority.nodes[0].record.safe);
+  return encodeAbiParameters(bootstrapType, [{ ...body, authority: encodeAuthorityGraph(body.authority) }]);
 }
-/** #135 supports authority counter zero only. Bootstrap payload carries a struct, unlike leaf publication. */
-export function signedBootstrapData(root: Hex, leaf: BootstrapLeaf, proof: readonly Hex[], attributes: readonly Hex[]): Hex {
-  if (!verifyDispatchProof(bootstrapLeafHash(leaf), proof, root)) throw new Error("invalid bootstrap proof");
-  const payload = encodeAbiParameters([{ type: "bytes32" }, { type: "uint256" }, bootstrapType, { type: "bytes32[]" }], [root, 0n, leaf, proof]);
-  return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "bootstrap", args: [payload, attributes] });
+/** `bootstrap(payload, attributes)` for a signed transmitter, with `Payload.encodeBootstrap`'s payload. */
+export function signedBootstrapData(destinationChainIdentifier: Hex, body: SignedBootstrap, attributes: readonly Hex[]): Hex {
+  return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "bootstrap", args: [encodeBootstrap(destinationChainIdentifier, encodeSignedBootstrap(body)), attributes] });
 }
 export function signedSendData(destination: Hex, calls: Hex, attributes: readonly Hex[]): Hex {
   if (calls === "0x") throw new Error("empty signed payload");
