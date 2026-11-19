@@ -424,7 +424,9 @@ const bootstrap = signedBootstrapData(encodeEvmChain(destinationChainId), body, 
 `OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"))`, and at most one attribute per send.
 `lzOptionsAttribute(rawOptions)` and the Foundry `LzOft.optionsAttribute(rawOptions)` build it. The raw
 options replace the default lzCompose option whole, so they must carry the compose gas the destination
-needs; the SDK does not validate their content. Any other attribute reverts.
+needs. Protocol reads an attribute with no options as present and empty, not as "use the defaults", so
+both builders reject empty options and odd-length hex; the content is not otherwise validated. Any other
+attribute reverts.
 
 **Creation.** `createTransmitter(salt, homeOft, leaves)` is called by the owner Safe, which becomes the
 conduit's owner. Each leaf is `{ chainKey, eid, oft }`: a destination, its endpoint id and the home

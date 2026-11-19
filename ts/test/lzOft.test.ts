@@ -33,10 +33,12 @@ describe("options attribute", () => {
   it("is the selector then the raw options", () => {
     expect(lzOptionsAttribute(vector.options)).toBe(vector.optionsAttribute);
     expect(lzOptionsAttribute("0x0003aa")).toBe(`${LZ_OPTIONS_ATTRIBUTE}0003aa`);
-    expect(lzOptionsAttribute("0x")).toBe(LZ_OPTIONS_ATTRIBUTE);
   });
-  it("rejects non-hex options", () => {
+  it("rejects non-hex, odd length and empty options", () => {
     expect(() => lzOptionsAttribute("0003aa" as Hex)).toThrow("hex");
+    expect(() => lzOptionsAttribute("0x0003a")).toThrow("whole bytes");
+    expect(() => lzOptionsAttribute("0xzz")).toThrow("hex");
+    expect(() => lzOptionsAttribute("0x")).toThrow("empty");
   });
   it("travels unchanged through the signed builders", () => {
     const attributes = [lzOptionsAttribute(vector.options)];

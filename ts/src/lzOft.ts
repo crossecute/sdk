@@ -29,10 +29,13 @@ const UINT32_MAX = 2 ** 32 - 1;
 /**
  * The only attribute a `layerzero-oft` conduit accepts, `abi.encodePacked(OPTIONS_ATTRIBUTE, rawOptions)`.
  * `rawOptions` replace the default lzCompose option whole, so they must carry the compose gas the destination
- * needs, and a send takes at most this one attribute. The options are not validated.
+ * needs, and a send takes at most this one attribute. Protocol reads a selector-only attribute as present with
+ * empty options (`ProviderAttribute.body`), not as "use the defaults", and that would send with no lzCompose
+ * option, so empty options are rejected here. Whole bytes of hex are required; the content is not validated.
  */
 export function lzOptionsAttribute(rawOptions: Hex): Hex {
-  if (!isHex(rawOptions)) throw new Error("options must be hex");
+  if (!isHex(rawOptions) || rawOptions.length % 2 !== 0) throw new Error("options must be hex of whole bytes");
+  if (rawOptions === "0x") throw new Error("options must not be empty");
   return concat([LZ_OPTIONS_ATTRIBUTE, rawOptions]);
 }
 

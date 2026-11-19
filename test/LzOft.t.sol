@@ -19,6 +19,10 @@ contract LzOftHarness {
         return LzOft.root(leaves, homeChainKey, homeEid);
     }
 
+    function optionsAttribute(bytes memory rawOptions) external pure returns (bytes memory) {
+        return LzOft.optionsAttribute(rawOptions);
+    }
+
     function createData(bytes32 salt, address homeOft, ILzOftConduitFactory.Leaf[] memory leaves)
         external
         pure
@@ -89,7 +93,11 @@ contract LzOftTest is Test {
 
     function test_theAttributeIsTheSelectorThenTheRawOptions() public pure {
         assertEq(LzOft.optionsAttribute(hex"0003aa"), abi.encodePacked(bytes4(0x98585a20), hex"0003aa"));
-        assertEq(LzOft.optionsAttribute(""), abi.encodePacked(bytes4(0x98585a20)));
+    }
+
+    function test_emptyOptionsAreRefused() public {
+        vm.expectRevert(LzOft.EmptyOptions.selector);
+        h.optionsAttribute("");
     }
 
     function test_aSingleLeafIsItsOwnRoot() public pure {

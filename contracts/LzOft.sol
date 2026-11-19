@@ -30,6 +30,7 @@ library LzOft {
     ///      this with vectors/lzoft-protocol.json, which scripts/sync-protocol135.py derives from protocol.
     bytes32 internal constant PROXY_INIT_CODE_HASH = 0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6;
 
+    error EmptyOptions();
     error NoDestinations();
     /// @dev Strictly ascending `chainKey` order, which also refuses a repeat; the factory's `LeavesNotSorted`.
     error LeavesNotSorted(uint256 index);
@@ -38,7 +39,10 @@ library LzOft {
 
     /// @notice The only attribute a `layerzero-oft` conduit accepts: `rawOptions` replace the default lzCompose
     ///         option whole, so they must carry the compose gas the destination needs.
+    /// @dev Protocol reads a selector-only attribute as present with empty options (`ProviderAttribute.body`), not
+    ///      as "use the defaults", which would send with no lzCompose option; so empty options revert here.
     function optionsAttribute(bytes memory rawOptions) internal pure returns (bytes memory) {
+        if (rawOptions.length == 0) revert EmptyOptions();
         return abi.encodePacked(OPTIONS_ATTRIBUTE, rawOptions);
     }
 
