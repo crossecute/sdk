@@ -152,17 +152,17 @@ export function encodeMerkleWire(evidence: SafeTxEvidence, leaf: ExecutionLeaf, 
 /**
  * `abi.encode(SignedBootstrap(guard, updateHead, abi.encode(graph), setupCalls))`. The graph must be the
  * guard's selected graph for `updateHead`; the transmitter checks its hash against the guard and the
- * receiver checks its shape. The graph's root is the conduit's owner Safe.
+ * receiver checks its shape. `owner` is the conduit's owner Safe and must be the graph's root, since the
+ * receiver requires its root to be the owner.
  */
-export function encodeSignedBootstrap(body: SignedBootstrap): Hex {
+export function encodeSignedBootstrap(body: SignedBootstrap, owner: Address): Hex {
   if (body.updateHead === zeroHash) throw new Error("zero update head");
-  if (!body.authority.nodes.length) throw new Error("wrong authority root");
-  validateAuthorityGraph(body.authority, body.authority.nodes[0].record.safe);
+  validateAuthorityGraph(body.authority, owner);
   return encodeAbiParameters(bootstrapType, [{ ...body, authority: encodeAuthorityGraph(body.authority) }]);
 }
 /** `bootstrap(payload, attributes)` for a signed transmitter, with `Payload.encodeBootstrap`'s payload. */
-export function signedBootstrapData(destinationChainIdentifier: Hex, body: SignedBootstrap, attributes: readonly Hex[]): Hex {
-  return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "bootstrap", args: [encodeBootstrap(destinationChainIdentifier, encodeSignedBootstrap(body)), attributes] });
+export function signedBootstrapData(destinationChainIdentifier: Hex, body: SignedBootstrap, owner: Address, attributes: readonly Hex[]): Hex {
+  return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "bootstrap", args: [encodeBootstrap(destinationChainIdentifier, encodeSignedBootstrap(body, owner)), attributes] });
 }
 export function signedSendData(destination: Hex, calls: Hex, attributes: readonly Hex[]): Hex {
   if (calls === "0x") throw new Error("empty signed payload");

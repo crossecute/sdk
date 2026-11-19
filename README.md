@@ -296,15 +296,15 @@ exact transport encodings, including nested approvals.
 
 ```ts
 import {
-  encodeCalls, encodeEvmChain, signedBootstrapData, authorityGraphHash, validateAuthorityGraph,
+  encodeCalls, encodeEvmChain, signedBootstrapData, authorityGraphHash,
 } from "@crossecute/sdk";
 
 // selection is guard.selection(ownerSafe); authority is the graph that hashes to selection.authorityHash.
-validateAuthorityGraph(authority, ownerSafe);
 if (authorityGraphHash(homeChainId, authority) !== selection.authorityHash) throw new Error("not the selected graph");
 const data = signedBootstrapData(
   encodeEvmChain(destinationChainId),
   { guard, updateHead: selection.updateHead, authority, setupCalls: encodeCalls(setupCalls) },
+  ownerSafe,
   attributes,
 );
 const envelope = signedDispatchTx(homeChainId, ownerSafe, transmitter, safeNonce, data);
@@ -316,11 +316,14 @@ abi.encode(graph), setupCalls)))`, and `setupCalls` is `abi.encode(Call[])`. Bot
 require `guard` to be the Safe's installed guard and the head and graph hash to equal its
 selection, and the Safe must have activated first. Price it with
 `signedTransmitterAbi.quoteBootstrap(payload, attributes)`, which validates the same body.
-`encodeSignedBootstrap` and `validateAuthorityGraph` check what the receiver checks of the body's
-shape: the owner Safe as root at position zero, nonzero descendant positions, canonical
-depth-first order without cycles, duplicates or unreachable nodes, valid thresholds and owner
-kinds, at most 16 owners per Safe, and a nonzero head. They cannot check positions against any
-guard. Signatures prove nothing about a carried graph, so the destination trusts the provider
+`signedBootstrapData(destination, body, owner, attributes)` and `encodeSignedBootstrap(body, owner)`
+reject a zero head and run `validateAuthorityGraph(graph, owner)`, which checks what the receiver
+checks of the body's shape: `owner` as the root at position zero (a graph canonical for another
+Safe is rejected), nonzero descendant positions, canonical depth-first order without cycles,
+duplicates or unreachable nodes, valid thresholds and owner kinds, and at most 16 owners per Safe.
+They cannot check the head, the graph hash or positions against the guard; compare
+`authorityGraphHash` with the guard's selection as above. The Foundry `SignedDispatch.bootstrapBody`
+validates nothing. Signatures prove nothing about a carried graph, so the destination trusts the provider
 and the source transceiver for it. A failed source transport reverts the Safe's bootstrap
 execution and the Safe can sign another; a second delivery to an existing receiver reverts.
 Bootstrap carries no historical updates.

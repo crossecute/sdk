@@ -10,7 +10,7 @@ const vectors = JSON.parse(readFileSync(new URL("../../vectors/signed.json", imp
 const addr = (n: number) => padHex(toHex(n), { size: 20 }) as Address;
 const word = (n: number) => padHex(toHex(n), { size: 32 });
 const leaf: s.ExecutionLeaf = { destination: "0x00010000010a141111111111111111111111111111111111111111", nonce: 7n, validAfter: 100n, deadline: 200n, calls: "0xabcdef", attributes: ["0x1234"] };
-const GUARD = addr(0x4444), HEAD = word(0xfeed), BOOTSTRAP_DESTINATION: Hex = "0x00010000010a00";
+const OWNER = addr(0x7777), GUARD = addr(0x4444), HEAD = word(0xfeed), BOOTSTRAP_DESTINATION: Hex = "0x00010000010a00";
 const graph: s.AuthorityGraph = {
   nodes: [
     { record: { safe: addr(0x7777), threshold: 2n, owners: [{ owner: addr(0x5555), kind: 0 }, { owner: addr(0x3333), kind: 1 }] }, position: zeroHash },
@@ -30,8 +30,8 @@ describe("protocol #135 Solidity parity", () => {
   const checks: Record<string, () => Hex> = {
     executionFields: () => s.encodeExecutionLeaf(leaf), executionHash: () => s.executionLeafHash(leaf),
     executionId: () => s.executionId(leaf), authorityGraph: () => s.encodeAuthorityGraph(graph),
-    bootstrapBody: () => s.encodeSignedBootstrap(bootstrap),
-    bootstrapData: () => s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, leaf.attributes),
+    bootstrapBody: () => s.encodeSignedBootstrap(bootstrap, OWNER),
+    bootstrapData: () => s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, OWNER, leaf.attributes),
     sendData: () => s.signedSendData(leaf.destination, leaf.calls, leaf.attributes),
     standaloneWire: () => s.encodeStandaloneWire(evidence), merkleWire: () => s.encodeMerkleWire(evidence, leaf, []),
     registerData: () => s.registerRootData(s.executionLeafHash(leaf)),
@@ -75,19 +75,29 @@ describe("signed bootstrap", () => {
   it("decodes to the guard, head, encoded graph and setup calls", () => {
     const [decoded] = decodeAbiParameters(
       [{ type: "tuple", components: [{ name: "guard", type: "address" }, { name: "updateHead", type: "bytes32" }, { name: "authority", type: "bytes" }, { name: "setupCalls", type: "bytes" }] }],
-      s.encodeSignedBootstrap(bootstrap),
+      s.encodeSignedBootstrap(bootstrap, OWNER),
     );
     expect(decoded).toEqual({ guard: GUARD, updateHead: HEAD, authority: s.encodeAuthorityGraph(graph), setupCalls: encodeCalls([]) });
   });
   it("wraps the body in the destination payload of bootstrap(payload, attributes)", () => {
-    const { functionName, args } = decodeFunctionData({ abi: signedTransmitterAbi, data: s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, ["0xaa"]) });
+    const { functionName, args } = decodeFunctionData({ abi: signedTransmitterAbi, data: s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, OWNER, ["0xaa"]) });
     expect(functionName).toBe("bootstrap");
-    expect(args).toEqual([encodeBootstrap(BOOTSTRAP_DESTINATION, s.encodeSignedBootstrap(bootstrap)), ["0xaa"]]);
+    expect(args).toEqual([encodeBootstrap(BOOTSTRAP_DESTINATION, s.encodeSignedBootstrap(bootstrap, OWNER)), ["0xaa"]]);
   });
   it("refuses a zero head and an invalid graph before encoding", () => {
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, updateHead: zeroHash })).toThrow("zero update head");
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: { nodes: [] } })).toThrow("wrong authority root");
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: { nodes: [graph.nodes[0]] } })).toThrow("missing authority record");
+    expect(() => s.encodeSignedBootstrap({ ...bootstrap, updateHead: zeroHash }, OWNER)).toThrow("zero update head");
+    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: { nodes: [] } }, OWNER)).toThrow("wrong authority root");
+    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: { nodes: [graph.nodes[0]] } }, OWNER)).toThrow("missing authority record");
+  });
+  it("refuses a graph rooted at a Safe other than the owner", () => {
+    const other = addr(0x9999);
+    expect(() => s.encodeSignedBootstrap(bootstrap, other)).toThrow("wrong authority root");
+    expect(() => s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, other, [])).toThrow("wrong authority root");
+    // A graph that is canonical for its own root still fails for the owner.
+    const rerooted = { nodes: [{ ...graph.nodes[1], position: zeroHash }] };
+    s.validateAuthorityGraph(rerooted, addr(0x3333));
+    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: rerooted }, OWNER)).toThrow("wrong authority root");
+    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: rerooted }, addr(0x3333))).not.toThrow();
   });
 });
 
@@ -104,7 +114,7 @@ describe("protocol #109 authority vectors", () => {
       s.validateAuthorityGraph(g, v.sourceSafe);
       expect(nodes.map((n) => s.authorityRecordHash(n.record))).toEqual(v.graph.entries.map((e: any) => e.recordHash));
       expect(s.authorityGraphHash(BigInt(v.sourceChainId), g)).toBe(v.graph.graphHash);
-      expect(s.encodeSignedBootstrap({ guard: v.guard, updateHead: v.updateHead, authority: g, setupCalls: encodeCalls([]) })).toBe(v.encoded);
+      expect(s.encodeSignedBootstrap({ guard: v.guard, updateHead: v.updateHead, authority: g, setupCalls: encodeCalls([]) }, v.sourceSafe)).toBe(v.encoded);
     });
   }
   it("commits to the source chain, each record and each position", () => {
