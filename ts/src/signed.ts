@@ -44,16 +44,19 @@ function pair(a: Hex, b: Hex): Hex {
 }
 /** Preserves publication order. Odd final nodes move up unchanged; leaves are never sorted. */
 export function dispatchTree(leaves: readonly Hex[]): { root: Hex; hashes: Hex[]; proofs: Hex[][] } {
-  if (!leaves.length) throw new Error("no leaves");
-  const hashes = leaves.map(dispatchLeafHash);
-  const levels = [hashes];
+  return dispatchTreeFromHashes(leaves.map(dispatchLeafHash));
+}
+/** The same tree over leaf hashes already computed with `dispatchLeafHash`. */
+export function dispatchTreeFromHashes(hashes: readonly Hex[]): { root: Hex; hashes: Hex[]; proofs: Hex[][] } {
+  if (!hashes.length) throw new Error("no leaves");
+  const levels = [[...hashes]];
   while (levels.at(-1)!.length > 1) {
     const level = levels.at(-1)!;
     const next: Hex[] = [];
     for (let i = 0; i < level.length; i += 2) next.push(i + 1 < level.length ? pair(level[i], level[i + 1]) : level[i]);
     levels.push(next);
   }
-  return { root: levels.at(-1)![0], hashes, proofs: hashes.map((_, index) => {
+  return { root: levels.at(-1)![0], hashes: [...hashes], proofs: hashes.map((_, index) => {
     const proof: Hex[] = [];
     for (const level of levels.slice(0, -1)) {
       const sibling = index ^ 1;
@@ -145,10 +148,14 @@ export function submitMessageData(evidence: SafeTxEvidence): Hex {
 export function submitLeafData(evidence: SafeTxEvidence, leaf: ExecutionLeaf, proof: readonly Hex[]): Hex {
   return encodeFunctionData({ abi: signedReceiverAbi, functionName: "submitLeaf", args: [evidence, leaf, proof] });
 }
-/** A separately signed CALL at its own Safe nonce. Never wrap signed sends in MultiSend. */
-export function signedDispatchTx(chainId: bigint, safe: Address, transmitter: Address, nonce: bigint, data: Hex, value = 0n): SafeTxEnvelope {
+/** Source chain id, Safe nonce and value must fit the signed transaction's uint256 fields; the chain id is nonzero. */
+export function checkSignedDispatchRange(chainId: bigint, nonce: bigint, value: bigint): void {
   if (chainId <= 0n || chainId >= 2n ** 256n) throw new Error("invalid source chain id");
   if (nonce < 0n || nonce >= 2n ** 256n || value < 0n || value >= 2n ** 256n) throw new Error("invalid Safe nonce or value");
+}
+/** A separately signed CALL at its own Safe nonce. Never wrap signed sends in MultiSend. */
+export function signedDispatchTx(chainId: bigint, safe: Address, transmitter: Address, nonce: bigint, data: Hex, value = 0n): SafeTxEnvelope {
+  checkSignedDispatchRange(chainId, nonce, value);
   return { chainId, safe, tx: { to: transmitter, value, data, nonce, operation: 0, safeTxGas: 0n, baseGas: 0n, gasPrice: 0n, gasToken: zeroAddress, refundReceiver: zeroAddress } };
 }
 /** Atomic source submission of separately signed Safe transactions, in consecutive nonce order per Safe. */

@@ -1,5 +1,6 @@
 import { type Address, type Hex, concat, encodeFunctionData, getAddress, hashDomain, hashStruct, hashTypedData, numberToHex, padHex } from "viem";
 import { type Plan, checkPlan } from "./plan.js";
+import { bytesHex, uint } from "./json.js";
 
 /** Safe's EIP-712 `SafeTx`. */
 export type SafeTx = {
@@ -70,31 +71,36 @@ export function parseSafeTxTypedData(json: string): SafeTxEnvelope {
   if (raw.primaryType !== "SafeTx") throw new Error("primaryType is not SafeTx");
   const domainKeys = Object.keys(raw.domain ?? {}).sort().join();
   if (domainKeys !== "chainId,verifyingContract") throw new Error("domain must hold exactly chainId and verifyingContract");
-  const m = raw.message ?? {};
-  const keys = safeTxTypes.SafeTx.map((f) => f.name);
-  if (Object.keys(m).sort().join() !== [...keys].sort().join()) throw new Error("message fields are not SafeTx's");
-  const uint = (v: unknown, at: string) => {
-    if (typeof v !== "string" || !/^[0-9]+$/.test(v)) throw new Error(`${at}: not a decimal string`);
-    return BigInt(v);
-  };
-  const operation = uint(m.operation, "operation");
-  if (operation > 1n) throw new Error("operation is not 0 or 1");
-  if (typeof m.data !== "string" || !/^0x([0-9a-fA-F]{2})*$/.test(m.data)) throw new Error("data: not complete hex bytes");
   return {
     chainId: uint(raw.domain.chainId, "domain.chainId"),
     safe: getAddress(raw.domain.verifyingContract),
-    tx: {
-      to: getAddress(m.to),
-      value: uint(m.value, "value"),
-      data: m.data.toLowerCase() as Hex,
-      operation: Number(operation) as 0 | 1,
-      safeTxGas: uint(m.safeTxGas, "safeTxGas"),
-      baseGas: uint(m.baseGas, "baseGas"),
-      gasPrice: uint(m.gasPrice, "gasPrice"),
-      gasToken: getAddress(m.gasToken),
-      refundReceiver: getAddress(m.refundReceiver),
-      nonce: uint(m.nonce, "nonce"),
-    },
+    tx: parseSafeTxFields(raw.message ?? {}),
+  };
+}
+
+export const safeTxFieldNames: readonly string[] = safeTxTypes.SafeTx.map((f) => f.name);
+
+/** The ten `SafeTx` fields as JSON strings: decimal integers, checksummed addresses, lowercase hex data. */
+export function serializeSafeTxFields(tx: SafeTx): Record<string, string> {
+  return Object.fromEntries(safeTxTypes.SafeTx.map(({ name }) => [name, String(tx[name])]));
+}
+
+/** Inverse of `serializeSafeTxFields`, refusing any other field set or encoding. */
+export function parseSafeTxFields(m: Record<string, unknown>): SafeTx {
+  if (Object.keys(m).sort().join() !== [...safeTxFieldNames].sort().join()) throw new Error("message fields are not SafeTx's");
+  const operation = uint(m.operation, "operation");
+  if (operation > 1n) throw new Error("operation is not 0 or 1");
+  return {
+    to: getAddress(m.to as string),
+    value: uint(m.value, "value"),
+    data: bytesHex(m.data, "data"),
+    operation: Number(operation) as 0 | 1,
+    safeTxGas: uint(m.safeTxGas, "safeTxGas"),
+    baseGas: uint(m.baseGas, "baseGas"),
+    gasPrice: uint(m.gasPrice, "gasPrice"),
+    gasToken: getAddress(m.gasToken as string),
+    refundReceiver: getAddress(m.refundReceiver as string),
+    nonce: uint(m.nonce, "nonce"),
   };
 }
 
@@ -150,6 +156,6 @@ export function checkSafeTx(plan: Plan, envelope: SafeTxEnvelope): void {
 
 /** Forge Attest / cast wallet sign EIP-712 input, with uints serialized losslessly as decimals. */
 export function serializeSafeTxTypedData({ chainId, safe, tx }: SafeTxEnvelope): string {
-  const message = Object.fromEntries(safeTxTypes.SafeTx.map(({ name }) => [name, String(tx[name])]));
+  const message = serializeSafeTxFields(tx);
   return JSON.stringify({ types: safeTxTypes, primaryType: "SafeTx", domain: { chainId: chainId.toString(), verifyingContract: safe }, message }, null, 2) + "\n";
 }
