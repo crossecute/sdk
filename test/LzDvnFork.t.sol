@@ -28,12 +28,20 @@ contract LzDvnForkTest is Test {
         transceiver.setMessageProvider(LzDvn.PROVIDER);
         transceiver.setProviderId(ChainKey.forEvm(FRAXTAL), 30255);
         transceiver.setProviderId(ChainKey.forEvm(ARBITRUM), 30110);
+        transceiver.setEndpoint(ENDPOINT);
         conduit = new MockLzTransmitter(address(0xA11CE), address(transceiver), ENDPOINT);
     }
 
     function test_fraxtalsDefaultRequiresTheDeadDvn() public {
         _fork();
         (bool dead, uint32 eid) = LzDvn.requiresDeadDvn(address(transceiver), address(conduit), FRAXTAL);
+        assertTrue(dead);
+        assertEq(eid, 30255);
+    }
+
+    function test_theTransceiversDefaultToFraxtalRequiresItToo() public {
+        _fork();
+        (bool dead, uint32 eid) = LzDvn.requiresDeadDvn(address(transceiver), address(transceiver), FRAXTAL);
         assertTrue(dead);
         assertEq(eid, 30255);
     }

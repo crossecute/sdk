@@ -10,8 +10,9 @@ import {MockTransceiver, MockTransmitter} from "./MockConduit.sol";
 import {MockLzEndpoint, MockLzTransmitter} from "./MockLz.sol";
 import {Harness} from "./CrossecuteScript.t.sol";
 
-/// @notice A plain LayerZero conduit is refused while its send config toward the destination
-///         requires the dead DVN, and accepted once the owner's stack replaces it.
+/// @notice A plain LayerZero conduit's bootstrap is the transceiver's send and its messages are
+///         the conduit's own: each is refused while its sender's config toward the destination
+///         requires the dead DVN, and accepted once that sender's stack replaces it.
 contract LzDeadDvnTest is Test {
     uint256 constant DEST = 252;
     uint32 constant EID = 30255;
@@ -25,11 +26,13 @@ contract LzDeadDvnTest is Test {
 
     function setUp() public {
         transceiver = new MockTransceiver(address(0xBEEF));
+        endpoint = new MockLzEndpoint();
         transceiver.setMessageProvider(LzDvn.PROVIDER);
         transceiver.setProviderId(ChainKey.forEvm(DEST), EID);
-        endpoint = new MockLzEndpoint();
+        transceiver.setEndpoint(address(endpoint));
         transmitter = new MockLzTransmitter(OWNER, address(transceiver), address(endpoint));
         script = new Harness(address(transmitter));
+        endpoint.setDefault(EID, _stack(LzDvn.DEAD));
     }
 
     function _stack(address a) internal pure returns (address[] memory s) {
@@ -41,8 +44,45 @@ contract LzDeadDvnTest is Test {
         script.add(DEST, new Call[](0), new bytes[](0));
     }
 
-    function test_aDefaultThatRequiresTheDeadDvnIsRefused() public {
-        endpoint.setDefault(EID, _stack(LzDvn.DEAD));
+    function _pinTransceiver() internal {
+        endpoint.pin(address(transceiver), EID, _stack(DVN));
+    }
+
+    function _pinConduit() internal {
+        endpoint.pin(address(transmitter), EID, _stack(DVN));
+    }
+
+    function test_aBootstrapOverAnUnpinnedTransceiverIsRefused() public {
+        vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzTransceiverDeadDvn.selector, DEST, EID));
+        _add();
+    }
+
+    function test_theConduitsPinDoesNotHelpTheBootstrap() public {
+        _pinConduit();
+        vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzTransceiverDeadDvn.selector, DEST, EID));
+        _add();
+    }
+
+    function test_theBootstrapNeedsOnlyTheTransceiversPin() public {
+        _pinTransceiver();
+        _add();
+    }
+
+    function test_aMessageAfterTheBootstrapNeedsTheOwnersSetDvn() public {
+        _pinTransceiver();
+        _add();
+        vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzDeadDvn.selector, DEST, EID));
+        _add();
+
+        _pinConduit();
+        _add();
+    }
+
+    function test_theTransceiversPinDoesNotHelpAMessage() public {
+        _pinTransceiver();
+        _add();
+        // Only the conduit's pin was missing; pinning the transceiver again changes nothing.
+        _pinTransceiver();
         vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzDeadDvn.selector, DEST, EID));
         _add();
     }
@@ -52,25 +92,19 @@ contract LzDeadDvnTest is Test {
         required[0] = DVN;
         required[1] = LzDvn.DEAD;
         endpoint.setDefault(EID, required);
-        vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzDeadDvn.selector, DEST, EID));
-        _add();
-    }
-
-    function test_theOwnersStackReplacesTheDeadDefault() public {
-        endpoint.setDefault(EID, _stack(LzDvn.DEAD));
-        endpoint.pin(address(transmitter), EID, _stack(DVN));
+        vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzTransceiverDeadDvn.selector, DEST, EID));
         _add();
     }
 
     function test_aPinForAnotherPathwayDoesNotHelp() public {
-        endpoint.setDefault(EID, _stack(LzDvn.DEAD));
-        endpoint.pin(address(transmitter), EID + 1, _stack(DVN));
-        vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzDeadDvn.selector, DEST, EID));
+        endpoint.pin(address(transceiver), EID + 1, _stack(DVN));
+        vm.expectRevert(abi.encodeWithSelector(CrossecuteScript.LzTransceiverDeadDvn.selector, DEST, EID));
         _add();
     }
 
-    function test_aLiveDefaultIsAccepted() public {
+    function test_aLiveDefaultIsAcceptedForBoth() public {
         endpoint.setDefault(EID, _stack(DVN));
+        _add();
         _add();
     }
 
