@@ -1,6 +1,7 @@
 import { TransmitterBaseAbi } from "@crossecute/protocol/abi";
-import { type Address, type Hex, encodeFunctionData, getAddress, isAddress, isHex } from "viem";
+import { type Address, type Hex, encodeFunctionData } from "viem";
 import { type Call, encodeBootstrap, encodeCalls, encodeEvm, encodeEvmChain } from "./encoding.js";
+import { address, array, bytesHex, uint } from "./json.js";
 
 export const PLAN_VERSION = "crossecute-plan/1";
 
@@ -27,26 +28,6 @@ export type Plan = {
   batches: Batch[];
 };
 
-function address(value: unknown, at: string): Address {
-  if (typeof value !== "string" || !isAddress(value, { strict: false })) throw new Error(`${at}: not an address`);
-  return getAddress(value);
-}
-
-function hex(value: unknown, at: string): Hex {
-  if (typeof value !== "string" || !isHex(value)) throw new Error(`${at}: not hex`);
-  return value;
-}
-
-function uint(value: unknown, at: string): bigint {
-  if (typeof value !== "string" || !/^[0-9]+$/.test(value)) throw new Error(`${at}: not a decimal string`);
-  return BigInt(value);
-}
-
-function array(value: unknown, at: string): unknown[] {
-  if (!Array.isArray(value)) throw new Error(`${at}: not an array`);
-  return value;
-}
-
 /** Parses and type-checks a plan file. Does not check that its calls match its batches; see `checkPlan`. */
 export function parsePlan(json: string): Plan {
   const raw = JSON.parse(json);
@@ -59,7 +40,7 @@ export function parsePlan(json: string): Plan {
     calls: array(raw.calls, "calls").map((c: any, i) => ({
       to: address(c.to, `calls[${i}].to`),
       value: uint(c.value, `calls[${i}].value`),
-      data: hex(c.data, `calls[${i}].data`),
+      data: bytesHex(c.data, `calls[${i}].data`),
     })),
     batches: array(raw.batches, "batches").map((b: any, i) => {
       if (typeof b.bootstrap !== "boolean") throw new Error(`batches[${i}].bootstrap: not a boolean`);
@@ -68,11 +49,11 @@ export function parsePlan(json: string): Plan {
         receiver: address(b.receiver, `batches[${i}].receiver`),
         bootstrap: b.bootstrap,
         gasUsed: uint(b.gasUsed, `batches[${i}].gasUsed`),
-        attributes: array(b.attributes, `batches[${i}].attributes`).map((a, j) => hex(a, `batches[${i}].attributes[${j}]`)),
+        attributes: array(b.attributes, `batches[${i}].attributes`).map((a, j) => bytesHex(a, `batches[${i}].attributes[${j}]`)),
         calls: array(b.calls, `batches[${i}].calls`).map((c: any, j) => ({
           target: address(c.target, `batches[${i}].calls[${j}].target`),
           value: uint(c.value, `batches[${i}].calls[${j}].value`),
-          data: hex(c.data, `batches[${i}].calls[${j}].data`),
+          data: bytesHex(c.data, `batches[${i}].calls[${j}].data`),
         })),
       };
     }),
@@ -107,6 +88,8 @@ export function checkPlan(plan: Plan): void {
   plan.calls.forEach((call, i) => {
     if (call.to !== plan.transmitter) throw new Error(`calls[${i}] is not to the transmitter`);
     if (i > 0 && call.value !== 0n) throw new Error(`calls[${i}] carries value`);
-    if (call.data.toLowerCase() !== homeCallData(plan.batches[i])) throw new Error(`calls[${i}] does not carry batches[${i}]`);
+    if (call.data.toLowerCase() !== homeCallData(plan.batches[i]).toLowerCase()) {
+      throw new Error(`calls[${i}] does not carry batches[${i}]`);
+    }
   });
 }

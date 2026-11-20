@@ -142,8 +142,9 @@ typed data the tests write, and checks the hash matches the SDK's.
 import { parsePlan, checkPlan, parseSafeTxTypedData, checkSafeTx, safeTxHashes, encodeEvm, encodeCalls, chainKey } from "@crossecute/sdk";
 ```
 
-`parsePlan` reads unsigned integers from decimal strings. `checkPlan` re-derives each
-home call from its batch and throws if the calldata differs.
+`parsePlan` reads unsigned integers as decimal strings within `uint256` and normalizes
+complete hex bytes to lowercase. `checkPlan` re-derives each home call from its batch and
+throws if the calldata differs.
 `checkSafeTx` throws unless the typed data is the one Safe transaction that carries the plan:
 the owner Safe's domain on the home chain, no gas refund, and the plan's call directly or all
 of its calls through a known MultiSendCallOnly.
