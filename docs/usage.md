@@ -397,6 +397,49 @@ thresholds and nested approval contents are verified by the receiver, not here.
 `relayLeafFromBundle`, `submitLeafFromBundle` and `submitMessageFromBundle` produce the delivery
 calldata, so an independent submitter needs only the bundle. Unknown bundle or package versions are rejected.
 
+### Propose, confirm and export through Safe Queue
+
+Build the standalone or Merkle `envelope` as above and save an unsigned bundle. For a Merkle
+registration, pass the same `merkle` package to everyone signing so they can inspect the calls
+and verify the root in the queued transaction.
+
+```ts
+writeFileSync("unsigned-bundle.json", serializeDeliveryBundle(
+  buildDeliveryBundle({ envelope, signatures: "0x", merkle }),
+));
+```
+
+Install `cast` and connect the Ledger for the owner address used in each command. Set
+`SAFE_API_KEY` for authenticated access to the [Safe Queue Service](https://docs.safe.global/core-api/safe-queue-service-overview).
+Share the unsigned bundle with the other owners. The proposal appears in the Safe{Wallet} queue.
+Each owner reviews the destination calls and uses the SDK signing command so they see and
+acknowledge the destination execution notice before the Ledger signs.
+
+```bash
+crossecute signed-propose unsigned-bundle.json "$OWNER_A"
+crossecute signed-confirm unsigned-bundle.json "$OWNER_B"
+crossecute signed-export unsigned-bundle.json "$OWNER_A" "$OWNER_B" > delivery.json
+```
+
+The export arguments identify the EOA owners whose signatures form quorum on the target
+receiver. Check the receiver's stored authority before choosing them. Export verifies the
+individual signatures against the exact queued Safe transaction and packs them in Safe owner
+address order. This queue workflow accepts typed-data and Safe `eth_sign` EOA signatures.
+For nested Safe signatures, assemble the full Safe signature blob and any nested evidence with
+the existing bundle builder. The receiver checks the actual quorum and execution conditions.
+
+An independent submitter can load `delivery.json` with `parseDeliveryBundle`, build calldata
+with `submitMessageFromBundle(bundle)` or `submitLeafFromBundle(bundle, index)`, and send it
+directly to the bootstrapped receiver named in the standalone message or leaf. The queue
+workflow performs off-chain proposal and confirmation requests. Direct submission can succeed
+while the source transaction is still pending and the bridge is offline.
+
+For another signing interface, use `SafeQueue.propose` and `SafeQueue.confirm` with a
+`SafeQueueSigner`. Its `acknowledge` callback must present the notice and return the owner's
+decision. The SDK calls `signTypedData` only after the owner accepts. Use the SDK signing path
+for every owner to get the acknowledgment. Safe{Wallet}'s built-in confirmation screen runs
+its own signing flow.
+
 ### LayerZero OFT conduits
 
 The `layerzero-oft` binding sends every message through an OFT its own team operates, from the
