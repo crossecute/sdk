@@ -24,7 +24,7 @@ describe("protocol #135 snapshot", () => {
     expect(read("scripts/sync-protocol135.py")).toContain(`REVISION = '${manifest.revision}'`);
     expect(JSON.parse(read("vectors/authority.json")).revision).toBe(manifest.revision);
     expect(JSON.parse(read("vectors/lzoft-protocol.json")).revision).toBe(manifest.revision);
-    expect(read("README.md")).toContain(`${manifest.repository}/commit/${manifest.revision}`);
+    expect(read("docs/usage.md")).toContain(`${manifest.repository}/commit/${manifest.revision}`);
     expect(read(vendorDir + "README.md")).toContain(`\`${manifest.revision}\``);
   });
 
