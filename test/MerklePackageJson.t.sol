@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
 import {PlanJson} from "../contracts/PlanJson.sol";
 import {SafeTx} from "../contracts/Types.sol";
-import {MerklePackage, MerkleEntry, ReceiverNonce, MerklePackages} from "../contracts/MerklePackage.sol";
+import {MerklePackage, ReceiverNonce, MerklePackages} from "../contracts/MerklePackage.sol";
 import {MerklePackageJson} from "../contracts/MerklePackageJson.sol";
 import {DispatchLeaves} from "../contracts/vendor/protocol135/DispatchLeaves.sol";
 import {ExecutionLeaf} from "../contracts/vendor/protocol135/SignedDispatchTypes.sol";
