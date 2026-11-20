@@ -4,29 +4,17 @@ pragma solidity ^0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
 import {DispatchLeaves} from "../contracts/vendor/protocol135/DispatchLeaves.sol";
-import {ExecutionLeaf} from "../contracts/vendor/protocol135/SignedDispatchTypes.sol";
+import {MerkleFixtures} from "./MerkleFixtures.sol";
 
 /// @dev Writes vectors/merkle.json, which ts/test/merkle.test.ts replays. `guard3` uses the leaves and
 ///      the cast-computed hashes and root of the protocol guard's `test_publish_matchesOffchainVector`.
-contract MerklePackageTest is Test {
-    bytes constant GUARD_DESTINATION = hex"000100000114";
-
-    function guardLeaves(uint256 count) internal pure returns (bytes[] memory leaves) {
-        leaves = new bytes[](count);
-        bytes[] memory attributes = new bytes[](1);
-        attributes[0] = hex"aa";
-        for (uint256 i; i < count; ++i) {
-            leaves[i] = SignedDispatch.encodeLeaf(ExecutionLeaf(GUARD_DESTINATION, i, 0, 1000, hex"c0de", attributes));
-        }
+contract MerklePackageTest is Test, MerkleFixtures {
+    function guardLeaves(uint256 count) internal pure returns (bytes[] memory) {
+        return encoded(guardExecutionLeaves(count));
     }
 
-    function multiLeaves() internal pure returns (bytes[] memory leaves) {
-        bytes[] memory attributes = new bytes[](0);
-        leaves = new bytes[](4);
-        leaves[0] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001aa", 3, 10, 20, hex"01", attributes));
-        leaves[1] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001bb", 0, 10, 20, hex"02", attributes));
-        leaves[2] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001aa", 4, 10, 20, hex"03", attributes));
-        leaves[3] = SignedDispatch.encodeLeaf(ExecutionLeaf(hex"0001000001cc", 0, 10, 20, hex"04", attributes));
+    function multiLeaves() internal pure returns (bytes[] memory) {
+        return encoded(multiExecutionLeaves());
     }
 
     function describe(string memory name, bytes[] memory leaves) internal returns (string memory) {
