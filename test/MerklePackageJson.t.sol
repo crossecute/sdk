@@ -2,51 +2,14 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {Call} from "@crossecute/protocol/messaging/Call.sol";
-import {Erc7930} from "@crossecute/protocol/addressing/Erc7930.sol";
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
 import {PlanJson} from "../contracts/PlanJson.sol";
 import {SafeTx} from "../contracts/Types.sol";
 import {MerklePackage, MerkleEntry, ReceiverNonce, MerklePackages} from "../contracts/MerklePackage.sol";
 import {MerklePackageJson} from "../contracts/MerklePackageJson.sol";
-import {MerklePackageScript} from "../contracts/MerklePackageScript.sol";
 import {DispatchLeaves} from "../contracts/vendor/protocol135/DispatchLeaves.sol";
 import {ExecutionLeaf} from "../contracts/vendor/protocol135/SignedDispatchTypes.sol";
 import {MerkleFixtures} from "./MerkleFixtures.sol";
-
-contract PackageScript is MerklePackageScript {
-    function addLeaf(ExecutionLeaf memory leaf) external {
-        _addLeaf(leaf);
-    }
-
-    function addBatch(
-        uint256 chainId,
-        address receiver,
-        uint256 nonce,
-        uint256 validAfter,
-        uint256 deadline,
-        Call[] memory calls,
-        bytes[] memory attributes
-    ) external {
-        _addLeaf(chainId, receiver, nonce, validAfter, deadline, calls, attributes);
-    }
-
-    function addReceiverNonce(bytes memory destination, uint256 nextNonce) external {
-        _addReceiverNonce(destination, nextNonce);
-    }
-
-    function addReceiverNonce(uint256 chainId, address receiver, uint256 nextNonce) external {
-        _addReceiverNonce(chainId, receiver, nextNonce);
-    }
-
-    function build() external view returns (MerklePackage memory) {
-        return _merklePackage();
-    }
-
-    function write(string memory path) external {
-        _writeMerklePackage(_merklePackage(), path);
-    }
-}
 
 /// @dev Writes vectors/merkle-package-*.json, which ts/test/merkle.test.ts parses, verifies and re-serializes to
 ///      the same bytes, so the Solidity writer and the TypeScript reader cannot drift.
@@ -198,47 +161,5 @@ contract MerklePackageJsonTest is Test, MerkleFixtures {
         MerklePackage memory pkg = MerklePackages.build(leaves, guardReceiverNonces());
         assertEq(pkg.leaves.length, 2);
         assertTrue(pkg.leaves[0].hash != pkg.leaves[1].hash);
-    }
-
-    /* =============================== script base ============================== */
-
-    function test_scriptQueuesAndWrites() public {
-        PackageScript script = new PackageScript();
-        address receiver = address(0xaa);
-        Call[] memory calls = new Call[](1);
-        calls[0] = Call({target: address(0xbb), value: 1, data: hex"c0de"});
-
-        script.addReceiverNonce(1, receiver, 7);
-        script.addBatch(1, receiver, 7, 0, 1000, calls, _attributes(hex"aa"));
-        ExecutionLeaf[] memory expected = new ExecutionLeaf[](2);
-        expected[0] = ExecutionLeaf(Erc7930.encodeEvm(1, receiver), 7, 0, 1000, abi.encode(calls), _attributes(hex"aa"));
-        expected[1] = ExecutionLeaf(Erc7930.encodeEvm(1, receiver), 8, 0, 1000, abi.encode(calls), new bytes[](0));
-        script.addLeaf(expected[1]);
-
-        ReceiverNonce[] memory nonces = new ReceiverNonce[](1);
-        nonces[0] = ReceiverNonce(Erc7930.encodeEvm(1, receiver), 7);
-        string memory json = MerklePackageJson.toJson(MerklePackages.build(expected, nonces));
-
-        assertEq(MerklePackageJson.toJson(script.build()), json);
-        script.write("out/merkle-package-script.json");
-        assertEq(vm.readFile("out/merkle-package-script.json"), json);
-    }
-
-    function test_scriptRawReceiverNonceMatchesTypedOverload() public {
-        PackageScript typed = new PackageScript();
-        PackageScript raw = new PackageScript();
-        ExecutionLeaf memory leaf =
-            ExecutionLeaf(Erc7930.encodeEvm(10, address(0xcc)), 0, 0, 1, hex"01", new bytes[](0));
-        typed.addLeaf(leaf);
-        raw.addLeaf(leaf);
-        typed.addReceiverNonce(10, address(0xcc), 0);
-        raw.addReceiverNonce(Erc7930.encodeEvm(10, address(0xcc)), 0);
-        assertEq(MerklePackageJson.toJson(typed.build()), MerklePackageJson.toJson(raw.build()));
-    }
-
-    function test_scriptBuildRevertsOnBadPlan() public {
-        PackageScript script = new PackageScript();
-        vm.expectRevert(abi.encodeWithSelector(SignedDispatch.NoLeaves.selector));
-        script.build();
     }
 }

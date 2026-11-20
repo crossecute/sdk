@@ -208,3 +208,12 @@ contract Counter {
         revert Refused();
     }
 }
+
+/// @notice A signed receiver's `nextNonce`, as the protocol's generated `signedReceiverAbi` declares it.
+contract MockSignedReceiver {
+    uint256 public nextNonce;
+
+    constructor(uint256 nextNonce_) {
+        nextNonce = nextNonce_;
+    }
+}
