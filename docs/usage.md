@@ -370,6 +370,9 @@ graph validation and source nonce order.
 `test/MerklePackage.t.sol` writes `vectors/merkle.json` (trees of 1, 2, 3, 5, 8 and 9 leaves and
 a tree over several receivers) and checks the protocol guard's cast-computed three-leaf root and
 leaf hashes. TypeScript builds the same trees and compares every encoded leaf, hash, root and proof.
+`test/MerklePackageJson.t.sol` writes `vectors/merkle-package-guard5.json` and
+`vectors/merkle-package-multi.json` with `MerklePackageJson`; TypeScript parses and verifies each file
+and re-serializes it to the same bytes.
 
 ### Merkle package and delivery bundle
 
@@ -383,6 +386,30 @@ receiver nonce (the receiver's conflicting-batch revert), a nonce below the rece
 different attributes is allowed, as the receiver records execution IDs without attributes.
 `verifyMerklePackage` rebuilds the tree from the leaves and checks every recorded root, hash and
 proof; the leaf order is part of the package.
+
+A Foundry script drafts the same package by extending `MerklePackageScript`. It queues the leaves
+and each receiver's observed `nextNonce`, then writes the file the other owners review and
+`parseMerklePackage` reads:
+
+```solidity
+_addReceiverNonce(optimism, receiver, nextNonce);           // observed at the pinned block
+_addLeaf(optimism, receiver, nonce, 0, deadline, calls, new bytes[](0));
+MerklePackage memory pkg = _merklePackage();                // checks the plan, builds root, hashes, proofs
+_writeMerklePackage(pkg, "out/merkle.json");
+
+bytes memory data = MerklePackages.registerData(pkg);       // the owner Safe's signed CALL
+SafeTx memory t = SignedDispatch.transaction(transmitter, safeNonce, data, 0);
+vm.writeFile("out/register-root.json", PlanJson.safeTxTypedData(block.chainid, ownerSafe, t));
+```
+
+`MerklePackages.build` applies the plan rules above and reverts with `DuplicateLeaf`,
+`ConflictingNonce`, `StaleNonce`, `MissingReceiverNonce`, `UnusedReceiverNonce` or
+`DuplicateReceiverNonce`. `MerklePackageJson.toJson` writes the TypeScript layout (decimal-string
+integers, lowercase hex, `version: 1`). `MerklePackages.publishData(pkg)` is the guard's
+`publishLeaves` calldata. The script reads no receiver state and simulates nothing: pass the
+`nextNonce` observed at the pinned block and simulate the batches separately. The overload that
+takes a chain ID, receiver and `Call[]` builds the ERC-7930 destination and `abi.encode(Call[])`
+that the leaf requires.
 
 `buildDeliveryBundle({ envelope, signatures, nestedApprovals, merkle })` records the exact Safe
 transaction, Safe address, home chain ID, signature blob and nested approvals, with the package for
