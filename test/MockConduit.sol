@@ -11,9 +11,18 @@ contract MockTransceiver {
     address public predictedTransmitter;
     bytes32 public messageProvider = keccak256("provider");
     mapping(bytes32 => bool) public reportsReceiver;
+    mapping(bytes32 => uint256) public providerIdFor;
 
     constructor(address predicted_) {
         predicted = predicted_;
+    }
+
+    function setMessageProvider(bytes32 provider) external {
+        messageProvider = provider;
+    }
+
+    function setProviderId(bytes32 key, uint256 id) external {
+        providerIdFor[key] = id;
     }
 
     function setReports(bytes32 key, bool reports) external {
