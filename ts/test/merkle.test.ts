@@ -131,3 +131,18 @@ describe("package JSON", () => {
     expect(() => m.parseMerklePackage(edit((o) => { o.receiverNonces[0].nextNonce = (2n ** 256n).toString(); }))).toThrow("exceeds uint256");
   });
 });
+
+describe("package files written by MerklePackageJson", () => {
+  const files: [string, s.ExecutionLeaf[], m.ReceiverNonce[]][] = [
+    ["guard5", guardLeaves(5), nonces()],
+    ["multi", multiLeaves, multiNonces],
+  ];
+  for (const [name, leaves, receiverNonces] of files) {
+    it(name, () => {
+      const raw = readFileSync(new URL(`../../vectors/merkle-package-${name}.json`, import.meta.url), "utf8");
+      const pkg = m.parseMerklePackage(raw);
+      expect(JSON.stringify(m.merklePackageToJSON(pkg))).toBe(raw);
+      expect(pkg).toEqual(m.buildMerklePackage(leaves, receiverNonces));
+    });
+  }
+});
