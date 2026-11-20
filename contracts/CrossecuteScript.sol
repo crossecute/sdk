@@ -16,6 +16,7 @@ import {HomeCall, Batch, Plan, SafeTx} from "./Types.sol";
 import {PlanJson} from "./PlanJson.sol";
 import {ISafe} from "./ISafe.sol";
 import {SafeTxHash} from "./SafeTxHash.sol";
+import {LzDvn} from "./LzDvn.sol";
 
 /// @title CrossecuteScript
 /// @notice Base for scripts that run calls on a conduit's receivers. A script runs on the home
@@ -49,6 +50,7 @@ abstract contract CrossecuteScript is Script {
     error HomeCallReverted(uint256 index, bytes reason);
     error OwnerIsContract(address owner);
     error NothingPlanned();
+    error LzDeadDvn(uint256 chainId, uint32 eid);
     error NotAConduit(address transmitter);
     error TransceiverNotRegistered(address transceiver, address expected);
     error TransmitterNotFromTransceiver(address transmitter, address expected);
@@ -146,8 +148,13 @@ abstract contract CrossecuteScript is Script {
     ///         destination run in the order added; the first to an unbootstrapped destination
     ///         becomes its bootstrap. Empty `attributes` take the provider's default gas.
     /// @dev The destination fork keeps the batch's effects, so a later batch simulates on top.
+    ///      Reverts `LzDeadDvn` for a plain LayerZero conduit whose send config toward `chainId`
+    ///      still requires LayerZero's dead DVN: its owner must first call
+    ///      `LzTransmitter.setDvn(eid, required, optional, optionalThreshold)` with the stack they
+    ///      choose, since every quote and send to the destination reverts until then.
     function _add(uint256 chainId, Call[] memory calls, bytes[] memory attributes) internal returns (uint256 gasUsed) {
         address receiver = _receiverOn(chainId);
+        _requireLiveDvn(chainId);
         bool bootstrap = !transmitter.isBootstrapped(ChainKey.forEvm(chainId)) && !_bootstrapQueued[chainId];
         if (bootstrap) _bootstrapQueued[chainId] = true;
 
@@ -173,6 +180,18 @@ abstract contract CrossecuteScript is Script {
                 );
             }
         }
+    }
+
+    /// @dev Reads the home chain: `_receiverOn` has selected it.
+    function _requireLiveDvn(uint256 chainId) private view {
+        (bool dead, uint32 eid) = LzDvn.requiresDeadDvn(transmitter.transceiver(), address(transmitter), chainId);
+        if (!dead) return;
+        console2.log(
+            "LayerZero eid %s requires the dead DVN: the owner must call setDvn(%s, ...) on the transmitter first",
+            eid,
+            eid
+        );
+        revert LzDeadDvn(chainId, eid);
     }
 
     function _simulate(uint256 chainId, address receiver, Call[] memory calls) internal returns (uint256 gasUsed) {

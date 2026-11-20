@@ -84,6 +84,14 @@ What it checks:
 - **Fees.** The transmitter pays fees from its own balance. `_plan` quotes every call in order
   and sets `calls[0].value` to top the balance up to the total plus `feeBufferBps` (10% by
   default). Anything left over stays in the transmitter for later sends.
+- **LayerZero's dead DVN.** On a plain `layerzero` conduit, `_add` reads the conduit's send ULN
+  toward the destination from its endpoint and reverts `LzDeadDvn(chainId, eid)` when
+  `0x…dEaD` is a required DVN: LayerZero's default for pathways it has not configured (every
+  Fraxtal and zkSync pathway), on which every quote and send reverts. The conduit's owner must
+  first call `LzTransmitter.setDvn(eid, required, optional, optionalThreshold)` with the stack
+  they choose, in a Safe transaction of its own. The script does not pick a stack, and it passes
+  once the endpoint reports a stack without the dead DVN. Other providers, `layerzero-oft`
+  included, are not checked.
 - **The home calls.** `_plan` runs them as the owner on the home fork, then restores the fork.
 - **The Safe transaction.** One call goes as a direct `CALL`; several go through the
   MultiSendCallOnly for the Safe's `VERSION()`, taken from a table of known deployments
