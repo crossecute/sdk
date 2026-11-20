@@ -6,8 +6,10 @@ transaction planning, verification, and Safe-signed dispatch.
 ## Install
 
 ```bash
-npm install @crossecute/sdk @crossecute/protocol viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
+pnpm add @crossecute/sdk @crossecute/protocol viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
 ```
+
+With npm, use `npm install` with the same packages.
 
 Foundry remappings:
 
@@ -99,7 +101,7 @@ file; pass a block to `_useDestination` to make that repeatable too.
 ```toml
 producer_repo   = "https://github.com/you/your-ops-repo"
 producer_commit = "<40-hex commit sha>"
-producer_setup  = "npm ci"
+producer_setup  = "pnpm install --frozen-lockfile --ignore-scripts"
 
 [[run]]
 script     = "script/Example.s.sol:Example"
@@ -133,7 +135,9 @@ environment `attest.sh` runs in. Each owner then signs and proposes or confirms 
 `./attest.sh --config attest.toml --attest -- --ledger`, which never sees the key. Check the
 claim fields against the Forge Attest version you pin; this example follows v1.4.0.
 
-`npm run test:attest` runs Forge Attest v1.4.0's own reader and hash derivation over the
+In an npm-based producer repository, set `producer_setup` to `npm ci --ignore-scripts`.
+
+`pnpm run test:attest` runs Forge Attest v1.4.0's own reader and hash derivation over the
 typed data the tests write, and checks the hash matches the SDK's.
 
 ## TypeScript
@@ -150,21 +154,29 @@ the owner Safe's domain on the home chain, no gas refund, and the plan's call di
 of its calls through a known MultiSendCallOnly.
 
 ```bash
-npx crossecute check out/plan.json out/safe-tx.json
+pnpm exec crossecute check out/plan.json out/safe-tx.json
 ```
 
-prints the batches, then the domain hash, message hash and `safeTxHash` a signer's device
-shows. Its only runtime dependency is `@crossecute/protocol`; viem is a peer dependency
+The command prints the batches, then the domain hash, message hash and `safeTxHash` a signer's
+device shows. Its only runtime dependency is `@crossecute/protocol`. viem is a peer dependency
 (`^2.57.18`), so a frontend keeps the single copy it already has.
+In an npm project, run the installed CLI with `npx crossecute check out/plan.json out/safe-tx.json`.
 
 ## Development
 
+Use Node.js 22.13 or later with the pnpm version pinned in `package.json`.
+
 ```bash
-npm install
-npm test             # forge test, then vitest
-npm run typecheck
-npm run test:attest  # needs network access, jq and cast
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm test             # forge test, then vitest
+pnpm run typecheck
+pnpm run test:attest  # needs network access, jq and cast
 ```
+
+For npm, run `npm ci --ignore-scripts` and use `npm test` or `npm run <script>`.
+CI tests both installers. When dependencies change, update both lockfiles with
+`pnpm install --lockfile-only --ignore-scripts` and
+`npm install --package-lock-only --ignore-scripts`.
 
 `test/Vectors.t.sol` writes `vectors/` from the protocol's own Solidity encoders and the
 SDK's MultiSendCallOnly table, and the TypeScript tests check their copies against it. The

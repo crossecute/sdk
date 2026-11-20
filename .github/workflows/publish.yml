@@ -31,6 +31,8 @@ jobs:
           node-version: 26
           registry-url: https://registry.npmjs.org
 
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
       # Staged publishing needs npm 11.15.0 or later; pinned so a Node update cannot change it.
       - run: npm install -g npm@11.21.1
 
@@ -51,13 +53,13 @@ jobs:
             const local = Object.entries(deps).filter(([, v]) => !/^[\d^~<>=. |x*-]+$/.test(v));
             if (local.length) { console.error("non-registry dependencies: " + JSON.stringify(local)); process.exit(1); }'
 
-      - run: npm ci --ignore-scripts
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - run: forge test
 
-      - run: npx vitest run
+      - run: pnpm run test:ts
 
-      - run: npm run typecheck
+      - run: pnpm run typecheck
 
       # prepack builds dist/ from this checkout.
       - run: npm stage publish . --access public --json > stage.json
@@ -73,5 +75,5 @@ jobs:
               "| file | `" + p.filename + "` |",
               "| shasum | `" + p.shasum + "` |",
               "| integrity | `" + p.integrity + "` |", "",
-              "Compare with `npm pack --json` (npm 11.21.1, Node 26) on a clean checkout of `" + process.env.GITHUB_REF_NAME + "` after `npm ci --ignore-scripts`."].join("\n"))' \
+              "Compare with `npm pack --json` (npm 11.21.1, Node 26) on a clean checkout of `" + process.env.GITHUB_REF_NAME + "` after `pnpm install --frozen-lockfile --ignore-scripts`."].join("\n"))' \
             >> "$GITHUB_STEP_SUMMARY"

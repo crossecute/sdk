@@ -11,6 +11,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        manager: [pnpm, npm]
     steps:
       # Actions pinned by commit: a moved tag would change what runs against this repo.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -23,7 +26,14 @@ jobs:
         with:
           node-version: 26
 
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        if: matrix.manager == 'pnpm'
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+        if: matrix.manager == 'pnpm'
+
       - run: npm ci --ignore-scripts
+        if: matrix.manager == 'npm'
 
       - run: forge fmt --check
 
@@ -33,13 +43,14 @@ jobs:
       # Fails if forge test rewrote a committed vector, which means the two languages drifted.
       - run: git diff --exit-code vectors/
 
-      - run: npx vitest run
+      - run: ${{ matrix.manager }} run test:ts
 
-      - run: npm run typecheck
+      - run: ${{ matrix.manager }} run typecheck
 
-      - run: npm run build
+      - run: ${{ matrix.manager }} run build
 
       - run: scripts/check-forge-attest.sh
+        if: matrix.manager == 'pnpm'
 
   # The pin is a commit on protocol's #135 branch, not a merge commit. This fails if the vendored
   # snapshot, generated ABIs, authority vectors or OFT pins differ from what that commit produces, or the OFT
