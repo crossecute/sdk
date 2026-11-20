@@ -5,6 +5,11 @@ import { checkPlan, parsePlan } from "../src/plan.js";
 // Written by test/CrossecuteScript.t.sol's test_planFile.
 const json = readFileSync(new URL("../../out/test-plan.json", import.meta.url), "utf8");
 
+type PlanBytesFixture = {
+  calls: { data: string }[];
+  batches: { attributes: string[]; calls: { data: string }[] }[];
+};
+
 describe("plan files", () => {
   it("parses and checks a plan the Foundry script wrote", () => {
     const plan = parsePlan(json);
@@ -33,5 +38,40 @@ describe("plan files", () => {
     const raw = JSON.parse(json);
     raw.fee = 1;
     expect(() => parsePlan(JSON.stringify(raw))).toThrow("fee: not a decimal string");
+  });
+
+  it("accepts the largest uint256 and rejects the next integer", () => {
+    const raw = JSON.parse(json);
+    const limit = 2n ** 256n;
+    raw.fee = (limit - 1n).toString();
+    expect(parsePlan(JSON.stringify(raw)).fee).toBe(limit - 1n);
+    raw.fee = limit.toString();
+    expect(() => parsePlan(JSON.stringify(raw))).toThrow("fee: exceeds uint256");
+  });
+
+  it.each<[string, (raw: PlanBytesFixture) => void]>([
+    ["calls[0].data", (raw) => {
+      raw.calls[0].data = "0x1";
+    }],
+    ["batches[0].attributes[0]", (raw) => {
+      raw.batches[0].attributes[0] = "0x1";
+    }],
+    ["batches[0].calls[0].data", (raw) => {
+      raw.batches[0].calls[0].data = "0x1";
+    }],
+  ])("rejects incomplete hex bytes at %s", (field, change) => {
+    const raw = JSON.parse(json);
+    change(raw);
+    expect(() => parsePlan(JSON.stringify(raw))).toThrow(`${field}: not complete hex bytes`);
+  });
+
+  it("treats uppercase hex digits as the same bytes when parsing and checking", () => {
+    const raw = JSON.parse(json);
+    raw.batches[0].attributes[0] = "0xDEADBEEF";
+    const plan = parsePlan(JSON.stringify(raw));
+    expect(plan.batches[0].attributes[0]).toBe("0xdeadbeef");
+    expect(() => checkPlan(plan)).not.toThrow();
+    plan.batches[0].attributes[0] = "0xDEADBEEF";
+    expect(() => checkPlan(plan)).not.toThrow();
   });
 });

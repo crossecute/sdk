@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
+  "packageManager": "pnpm@11.28.13",
   "engines": {
     "node": ">=22.12"
   },
@@ -26,11 +27,11 @@
   ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "test": "npm run test:forge && npm run test:ts",
+    "test": "node --run test:forge && node --run test:ts",
     "test:forge": "forge test",
     "test:ts": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "prepack": "npm run build",
+    "prepack": "node --run build",
     "test:attest": "scripts/check-forge-attest.sh"
   },
   "dependencies": {

@@ -8,4 +8,4 @@ flowchart LR
     Sim --> Tx["Build one Safe transaction"] --> Check["Check against the plan"]
 ```
 
-Install with `npm install @crossecute/sdk`. Start with the [usage guide](docs/usage.md) or the [two-chain example](script/Example.s.sol).
+Install with `pnpm add @crossecute/sdk` or `npm install @crossecute/sdk`. Start with the [usage guide](docs/usage.md) or the [two-chain example](script/Example.s.sol).
