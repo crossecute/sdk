@@ -387,42 +387,39 @@ different attributes is allowed, as the receiver records execution IDs without a
 `verifyMerklePackage` rebuilds the tree from the leaves and checks every recorded root, hash and
 proof; the leaf order is part of the package.
 
-A Foundry script drafts the same package by extending `MerklePackageScript`. It queues the leaves
-and each receiver's observed `nextNonce`, then writes the file the other owners review and
-`parseMerklePackage` reads:
+A Foundry script drafts the same package by extending `MerklePackageScript`, which extends
+`CrossecuteScript`: it runs on the home chain, forks each destination, and writes the file the other
+owners review and `parseMerklePackage` reads. The receiver comes from the transmitter, as in the plain
+planner, and its `nextNonce` is read on the destination fork, so a script names neither.
 
 ```solidity
-_addReceiverNonce(optimism, receiver, nextNonce);           // observed at the pinned block
-_addLeaf(optimism, receiver, nonce, 0, deadline, calls, new bytes[](0));
+_useHome(registry, transmitter);
+uint256 optimism = _useDestination(vm.envString("OPTIMISM_RPC_URL"));
+
+_addLeaf(optimism, 0, deadline, calls, new bytes[](0));     // next free nonce, simulated as the receiver
 MerklePackage memory pkg = _merklePackage();                // checks the plan, builds root, hashes, proofs
 _writeMerklePackage(pkg, "out/merkle.json");
 
 bytes memory data = MerklePackages.registerData(pkg);       // the owner Safe's signed CALL
-SafeTx memory t = SignedDispatch.transaction(transmitter, safeNonce, data, 0);
-vm.writeFile("out/register-root.json", PlanJson.safeTxTypedData(block.chainid, ownerSafe, t));
+SafeTx memory t = SignedDispatch.transaction(address(transmitter), safeNonce, data, 0);
+vm.writeFile("out/register-root.json", PlanJson.safeTxTypedData(block.chainid, transmitter.owner(), t));
 ```
+
+`_addLeaf` takes the transmitter's recorded receiver once the destination is bootstrapped and the
+registry-derived prediction before. It reads the receiver's `nextNonce()` the first time a chain is used
+and reuses that value for every later leaf, so one package never mixes blocks. A receiver that is not yet
+deployed starts at nonce 0, and a deployed receiver without `nextNonce()` reverts with
+`ReceiverNonceUnreadable`. Each leaf's calls run as the receiver on the destination fork and keep their
+effects, so a later leaf simulates on top. `_addLeaf(chainId, nonce, ...)` queues the same batch at a
+given nonce under other attributes; later free nonces follow it. The helper covers EVM destinations.
+For any other leaf, call `MerklePackages.build` with the leaves and observed receiver nonces directly.
 
 `MerklePackages.build` applies the plan rules above and reverts with `DuplicateLeaf`,
 `ConflictingNonce`, `StaleNonce`, `MissingReceiverNonce`, `UnusedReceiverNonce` or
 `DuplicateReceiverNonce`. `MerklePackageJson.toJson` writes the TypeScript layout (decimal-string
 integers, lowercase hex, `version: 1`). `MerklePackages.publishData(pkg)` is the guard's
-`publishLeaves` calldata. The script reads no receiver state and simulates nothing: pass the
-`nextNonce` observed at the pinned block and simulate the batches separately. The overload that
-takes a chain ID, receiver and `Call[]` builds the ERC-7930 destination and `abi.encode(Call[])`
-that the leaf requires.
-
-`buildDeliveryBundle({ envelope, signatures, nestedApprovals, merkle })` records the exact Safe
-transaction, Safe address, home chain ID, signature blob and nested approvals, with the package for
-a `registerRoot` transaction. `serializeDeliveryBundle` and `parseDeliveryBundle` use a strict JSON
-layout (decimal-string integers, exact field sets, `version: 1`) and verify on both sides.
-`verifyDeliveryBundle` needs no signer or RPC: it recomputes the Safe transaction hash, requires a
-CALL whose calldata is exactly one non-empty `sendMessage` (standalone) or `registerRoot` of the
-package root, applies the builders' chain id, nonce and value ranges, rebuilds the tree, and rejects
-duplicate `(childSafe, messageHash)` approvals. Hex fields compare case-insensitively, and the build
-functions return lowercase hex and checksummed addresses, the form the parsers read. Signatures,
-thresholds and nested approval contents are verified by the receiver, not here.
-`relayLeafFromBundle`, `submitLeafFromBundle` and `submitMessageFromBundle` produce the delivery
-calldata, so an independent submitter needs only the bundle. Unknown bundle or package versions are rejected.
+`publishLeaves` calldata. As with `CrossecuteScript`, a receiver that is not yet deployed meets no code
+in simulation, so a callback into it that it would refuse succeeds there.
 
 ### Propose, confirm and export through Safe Queue
 
