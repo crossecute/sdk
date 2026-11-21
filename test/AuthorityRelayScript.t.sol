@@ -94,9 +94,7 @@ contract AuthorityRelayScriptTest is Test, AuthorityRelayScript {
         assertEq(proposal.value, 40);
         assertEq(proposal.nonce, 12);
         assertEq(proposal.data, abi.encodeCall(IAuthorityRelayMulticall.aggregate3Value, (calls)));
-        vm.writeFile(
-            "out/test-authority-relay-batch-safe-tx.json", PlanJson.safeTxTypedData(10, SAFE, proposal)
-        );
+        vm.writeFile("out/test-authority-relay-batch-safe-tx.json", PlanJson.safeTxTypedData(10, SAFE, proposal));
         vm.writeFile(
             "out/test-authority-relay-batch-safe-tx-hash.txt", vm.toString(SafeTxHash.hash(10, SAFE, proposal))
         );
