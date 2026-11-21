@@ -5,9 +5,9 @@ import {Create2} from "@openzeppelin/contracts/utils/Create2.sol";
 import {SignedDispatch} from "./SignedDispatch.sol";
 
 /// @notice The factory's creation entry point, `LzOftConduitFactory.createTransmitter` and its `Leaf`, at protocol
-///         revision 3169f8c. Named apart from protocol's `ILzOftConduitFactory`, which declares other members and
-///         is not vendored. The selector and layout are checked against the pinned ABI by ts/test/lzOft.test.ts
-///         and against the compiled factory by scripts/check-lzoft-vectors.py.
+///         0.2.0. Named apart from protocol's `ILzOftConduitFactory`, which declares other members. The selector
+///         and layout are checked against the pinned ABI by ts/test/lzOft.test.ts and against the compiled
+///         factory by scripts/check-lzoft-vectors.py.
 interface ILzOftCreate {
     struct Leaf {
         bytes32 chainKey;
@@ -27,10 +27,10 @@ library LzOft {
     // forge-lint: disable-next-line(unsafe-typecast) a selector is the hash's first 4 bytes
     bytes4 internal constant OPTIONS_ATTRIBUTE = bytes4(keccak256("crossecute.lz.options"));
 
-    /// @dev `keccak256` of `Proxy`'s initcode at the pinned protocol revision, which a conduit's CREATE2 address
+    /// @dev `keccak256` of `Proxy`'s initcode at the pinned protocol release, which a conduit's CREATE2 address
     ///      hashes. `predictConduit` takes the hash as an argument; the deployed factory's `PROXY_INIT_CODE_HASH()`
     ///      is the value to pass. test/LzOft.t.sol compares this with vectors/lzoft-protocol.json, which
-    ///      scripts/sync-protocol135.py derives from protocol.
+    ///      scripts/sync-protocol.py derives from protocol.
     bytes32 internal constant PROXY_INIT_CODE_HASH = 0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6;
 
     error EmptyOptions();

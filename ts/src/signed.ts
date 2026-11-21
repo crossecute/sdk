@@ -28,25 +28,25 @@ export type SignedBootstrap = { guard: Address; updateHead: Hex; authority: Auth
 
 // Take tuple definitions from the pinned protocol ABI; no independent copy of nested ABI layouts.
 // Lookups are by member name and fail at import if a resync renames one; encoders that pass values
-// positionally rely on the member order that ts/test/protocol135.test.ts asserts.
+// positionally rely on the member order that ts/test/protocolRelease.test.ts asserts.
 type AbiNode = AbiParameter & { components?: readonly AbiNode[] };
 function member(parent: readonly AbiNode[] | undefined, name: string, of: string): AbiNode {
   const found = parent?.find((p) => p.name === name);
-  if (!found) throw new Error(`pinned protocol ABI: ${of} has no member "${name}"; resync with scripts/sync-protocol135.py`);
+  if (!found) throw new Error(`pinned protocol ABI: ${of} has no member "${name}"; resync with scripts/sync-protocol.py`);
   return found;
 }
 function abiFunction(abi: readonly { type: string; name?: string }[], name: string) {
   const f = abi.find((x) => x.type === "function" && x.name === name) as { inputs: readonly AbiNode[]; outputs: readonly AbiNode[] } | undefined;
-  if (!f) throw new Error(`pinned protocol ABI has no function "${name}"; resync with scripts/sync-protocol135.py`);
+  if (!f) throw new Error(`pinned protocol ABI has no function "${name}"; resync with scripts/sync-protocol.py`);
   return f;
 }
 const relay = abiFunction(signedTransmitterAbi, "relayLeaf");
 const evidenceType = member(relay.inputs, "registrationEvidence", "relayLeaf");
 const executionType = member(relay.inputs, "leaf", "relayLeaf");
-if (!executionType.components) throw new Error("pinned protocol ABI: relayLeaf leaf is not a tuple; resync with scripts/sync-protocol135.py");
+if (!executionType.components) throw new Error("pinned protocol ABI: relayLeaf leaf is not a tuple; resync with scripts/sync-protocol.py");
 const executionFields = executionType.components;
 const graphOutputs = abiFunction(signedReceiverAbi, "graph").outputs;
-if (graphOutputs.length !== 1 || graphOutputs[0].type !== "tuple") throw new Error("pinned protocol ABI: graph must return one AuthorityGraph tuple; resync with scripts/sync-protocol135.py");
+if (graphOutputs.length !== 1 || graphOutputs[0].type !== "tuple") throw new Error("pinned protocol ABI: graph must return one AuthorityGraph tuple; resync with scripts/sync-protocol.py");
 const graphType = graphOutputs[0];
 const nodeType = member(graphType.components, "nodes", "AuthorityGraph");
 const recordType = member(nodeType.components, "record", "AuthorityNode");

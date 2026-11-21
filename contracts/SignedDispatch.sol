@@ -8,18 +8,16 @@ import {
     SignedBootstrap,
     WIRE_STANDALONE,
     WIRE_MERKLE
-} from "./vendor/protocol135/SignedDispatchTypes.sol";
-import {AuthorityGraph} from "./vendor/protocol135/AuthorityGraph.sol";
-import {ISignedTransmitter} from "./vendor/protocol135/ISignedTransmitter.sol";
-import {ISignedReceiver} from "./vendor/protocol135/ISignedReceiver.sol";
-import {ICrossecuteGuard} from "./vendor/protocol135/ICrossecuteGuard.sol";
+} from "@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol";
+import {AuthorityGraph} from "@crossecute/protocol/messaging/authority/AuthorityGraph.sol";
+import {ISignedTransmitter} from "@crossecute/protocol/messaging/outbound/ISignedTransmitter.sol";
+import {ISignedReceiver} from "@crossecute/protocol/messaging/inbound/ISignedReceiver.sol";
+import {ICrossecuteGuard} from "@crossecute/protocol/safe-guard/ICrossecuteGuard.sol";
 import {IERC7786GatewaySource} from "@crossecute/protocol/messaging/IErc7786.sol";
 import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 
-/// @notice Foundry builders for protocol #135. Does not collect or authenticate signatures,
+/// @notice Foundry builders for the protocol's signed dispatch. Does not collect or authenticate signatures,
 ///         simulate provider delivery, or predict receiver addresses from local initcode.
-/// @dev Import leaf/evidence/graph types from vendor/protocol135 until
-///      a protocol package containing these interfaces is published.
 library SignedDispatch {
     error NoLeaves();
     error IndexOutOfRange();

@@ -3,19 +3,19 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
-import {SafeTx, SignedSafeTx} from "../contracts/vendor/protocol135/ICrossecuteGuard.sol";
-import {SafeHashes} from "../contracts/vendor/protocol135/SafeHashes.sol";
-import {DispatchLeaves} from "../contracts/vendor/protocol135/DispatchLeaves.sol";
+import {SafeTx, SignedSafeTx} from "@crossecute/protocol/safe-guard/ICrossecuteGuard.sol";
+import {SafeHashes} from "@crossecute/protocol/safe-guard/SafeHashes.sol";
+import {DispatchLeaves} from "@crossecute/protocol/messaging/signed/DispatchLeaves.sol";
 import {
     ExecutionLeaf,
     SafeTxEvidence,
     NestedSafeApproval,
     SignedBootstrap
-} from "../contracts/vendor/protocol135/SignedDispatchTypes.sol";
-import {AuthorityGraph, AuthorityNode} from "../contracts/vendor/protocol135/AuthorityGraph.sol";
-import {SafeAuthorityRecord, SafeOwner} from "../contracts/vendor/protocol135/SafeAuthorityTypes.sol";
-import {ISignedTransmitter} from "../contracts/vendor/protocol135/ISignedTransmitter.sol";
-import {SafeBatchExecutor, ISafeExec} from "../contracts/vendor/protocol135/SafeBatchExecutor.sol";
+} from "@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol";
+import {AuthorityGraph, AuthorityNode} from "@crossecute/protocol/messaging/authority/AuthorityGraph.sol";
+import {SafeAuthorityRecord, SafeOwner} from "@crossecute/protocol/messaging/signed/types/SafeAuthorityTypes.sol";
+import {ISignedTransmitter} from "@crossecute/protocol/messaging/outbound/ISignedTransmitter.sol";
+import {SafeBatchExecutor, ISafeExec} from "@crossecute/protocol/safe-guard/SafeBatchExecutor.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 

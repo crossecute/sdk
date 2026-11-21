@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
-import {DispatchLeaves} from "../contracts/vendor/protocol135/DispatchLeaves.sol";
+import {DispatchLeaves} from "@crossecute/protocol/messaging/signed/DispatchLeaves.sol";
 import {MerkleFixtures} from "./MerkleFixtures.sol";
 
 /// @dev Writes vectors/merkle.json, which ts/test/merkle.test.ts replays. `guard3` uses the leaves and

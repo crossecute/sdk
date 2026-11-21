@@ -5,7 +5,7 @@ import {console2} from "forge-std/console2.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 import {Erc7930} from "@crossecute/protocol/addressing/Erc7930.sol";
-import {ExecutionLeaf} from "./vendor/protocol135/SignedDispatchTypes.sol";
+import {ExecutionLeaf} from "@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol";
 import {CrossecuteScript} from "./CrossecuteScript.sol";
 import {MerklePackage, ReceiverNonce, MerklePackages} from "./MerklePackage.sol";
 import {MerklePackageJson} from "./MerklePackageJson.sol";

@@ -33,7 +33,7 @@ contract LzOftHarness {
 }
 
 /// @notice Writes vectors/lzoft.json, which the TypeScript builders must reproduce, and checks the library's
-///         constants against vectors/lzoft-protocol.json, which scripts/sync-protocol135.py derives from protocol.
+///         constants against vectors/lzoft-protocol.json, which scripts/sync-protocol.py derives from protocol.
 contract LzOftTest is Test {
     LzOftHarness h = new LzOftHarness();
 

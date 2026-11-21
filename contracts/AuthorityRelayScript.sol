@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import {Script} from "forge-std/Script.sol";
 import {PlanJson} from "./PlanJson.sol";
 import {SafeTx} from "./Types.sol";
-import {ISignedTransmitter} from "./vendor/protocol135/ISignedTransmitter.sol";
+import {ISignedTransmitter} from "@crossecute/protocol/messaging/outbound/ISignedTransmitter.sol";
 
 interface IAuthorityRelayMulticall {
     struct Call3Value {

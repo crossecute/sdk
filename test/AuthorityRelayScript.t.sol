@@ -6,7 +6,7 @@ import {AuthorityRelayScript, IAuthorityRelayMulticall} from "../contracts/Autho
 import {PlanJson} from "../contracts/PlanJson.sol";
 import {SafeTx} from "../contracts/Types.sol";
 import {SafeTxHash} from "../contracts/SafeTxHash.sol";
-import {ISignedTransmitter} from "../contracts/vendor/protocol135/ISignedTransmitter.sol";
+import {ISignedTransmitter} from "@crossecute/protocol/messaging/outbound/ISignedTransmitter.sol";
 
 /// @dev Quotes `fee` only for `payer`, so a wrong quote account changes the proposal.
 contract QuoteByCaller {

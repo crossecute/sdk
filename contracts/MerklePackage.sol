@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ExecutionLeaf} from "./vendor/protocol135/SignedDispatchTypes.sol";
-import {DispatchLeaves} from "./vendor/protocol135/DispatchLeaves.sol";
+import {ExecutionLeaf} from "@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol";
+import {DispatchLeaves} from "@crossecute/protocol/messaging/signed/DispatchLeaves.sol";
 import {SignedDispatch} from "./SignedDispatch.sol";
 
 /// @notice The receiver's `nextNonce` for `destination` when the plan was built.

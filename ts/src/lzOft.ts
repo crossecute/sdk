@@ -10,9 +10,9 @@ import { lzOftConduitFactoryAbi } from "./signedAbi.js";
 /** `LzMessage.OPTIONS_ATTRIBUTE`, the selector of the one attribute a `layerzero-oft` conduit accepts. */
 export const LZ_OPTIONS_ATTRIBUTE: Hex = slice(keccak256(stringToHex("crossecute.lz.options")), 0, 4);
 /**
- * `keccak256` of `Proxy`'s initcode at the pinned protocol revision, which a conduit's CREATE2 address hashes.
+ * `keccak256` of `Proxy`'s initcode at the pinned protocol release, which a conduit's CREATE2 address hashes.
  * The deployed factory's `PROXY_INIT_CODE_HASH()` is authoritative; `ts/test/lzOft.test.ts` compares this with
- * vectors/lzoft-protocol.json, which scripts/sync-protocol135.py derives from protocol.
+ * vectors/lzoft-protocol.json, which scripts/sync-protocol.py derives from protocol.
  */
 export const LZ_OFT_PROXY_INIT_CODE_HASH: Hex = "0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6";
 
@@ -111,7 +111,7 @@ export function lzOftConduitSalt(f: LzOftConduitFields): Hex {
  * `LzOftConduitFactory.predictConduit` for the factory at `factory`. The conduit's receiver is at this same
  * address on every destination. `proxyInitCodeHash` is required: pass the deployed factory's
  * `PROXY_INIT_CODE_HASH()`, which is what its own `predictConduit` hashes. `LZ_OFT_PROXY_INIT_CODE_HASH` is the
- * pinned revision's value, for tests and for checking the deployed one.
+ * pinned release's value, for tests and for checking the deployed one.
  */
 export function predictLzOftConduit(factory: Address, f: LzOftConduitFields, proxyInitCodeHash: Hex): Address {
   if (!isHex(proxyInitCodeHash) || size(proxyInitCodeHash) !== 32) throw new Error("proxy initcode hash must be 32 bytes");
