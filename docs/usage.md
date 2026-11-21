@@ -219,8 +219,83 @@ update head of that Safe for each descendant. Each Safe has at most 16 immediate
 
 Each receiver stores the head and graph its own bootstrap carried, on the provider's and source
 transceiver's authentication, and advances only through authority updates submitted to it.
-Owners read `selection()` and `graph(selection().authorityHash)` on a receiver before relying
-on it. Building and submitting authority updates is not covered (sdk#14).
+Owners can read `selection()` and `graph(selection().authorityHash)` on a receiver before relying
+on it. Each receiver starts at the head in its authenticated bootstrap and advances one signed
+successor at a time.
+
+### Authority proposals
+
+Use `AuthoritySource` with a source RPC, guard address, pinned block, and earliest possible
+guard block. `planAuthorityProposal(source, input)` retrieves the selected graph, checks
+its hash against the guard, and resolves forward proofs for retained child Safes. The
+input names the Safe, nonce, new graph and action (`activate`, `ownership`, or `adopt`).
+For ownership changes, supply the guard's pinned MultiSendCallOnly and the ordered Safe
+owner mutations. Activation starts with an empty current witness. Historical activation
+witnesses are recovered from the transaction input for the supported Multicall3 entry
+points. Successor witnesses and catch-up proofs come from `AuthorityPublished` logs,
+verified against the guard's publication hash. The RPC must serve this history.
+
+The proposal exposes the same `SafeTxEnvelope` and `serializeSafeTxTypedData` as other SDK
+operations. Once signed, call `prepareAuthorityExecution` with the portable signatures,
+any nested approvals, and the normal signing callback for the live Safe. It checks the
+portable signatures against the live Safe first and requests live signatures only if the
+check reverts. It keeps the original portable evidence and simulates the complete atomic
+call. Submit the returned transaction to the configured Multicall3, which stages the
+witness and executes the Safe in one transaction. The Safe UI can collect signatures.
+Execution must use the staged call because the witness exists only inside that transaction.
+
+A parent Safe keeps each child at the position the parent selected. `staleAuthorityChildren`
+reports newer positions without modifying the parent's snapshot. Use an `adopt` proposal
+to advance the parent to the chosen child positions before dispatching under the new
+authority. A rejected or replaced source proposal does not revoke portable approvals.
+Portable approvals have no expiry. A receiver that still selects its predecessor can accept
+a valid signed update directly.
+A receiver accepts the first valid successor of its own head.
+
+### Authority catch-up with Forge Attest
+
+`planAuthorityCatchUp` checks the source-to-receiver route and walks the verified source
+publications back to the receiver's head. Use the returned envelope for the next
+`relayAuthority` call. The source Safe pays the provider fee, and the receiver applies
+the update on provider delivery. Use `authorityRelayDelivered` to check the expected
+receiver head and graph hash. Re-plan after delivery for each remaining update. A
+source relay receipt alone does not establish destination delivery. Direct submitters can
+encode an ordered, atomic destination batch with `submitAuthorityBatchData`. For independent
+receivers, `scaffoldAuthorityRelayBatch` generates a single Safe proposal using a CALL to
+Multicall3 with one successor per receiver. The batch pins the exact native value of each
+call. Requote if provider fees change before execution.
+
+Run `crossecute authority-relay relay-config.json relay-files` to generate a Forge producer
+script and an `attest.toml` for the next relay proposal. Set the named RPC environment
+variables and provide this configuration with your own chain state and addresses.
+
+```json
+{
+  "sourceRpcEnv": "MAINNET_RPC_URL",
+  "destinationRpcEnv": "BASE_RPC_URL",
+  "sourceBlock": "22000000",
+  "destinationBlock": "27000000",
+  "guardFromBlock": "21000000",
+  "guard": "0x0000000000000000000000000000000000000001",
+  "safe": "0x0000000000000000000000000000000000000002",
+  "nonce": "42",
+  "transmitter": "0x0000000000000000000000000000000000000003",
+  "receiver": "0x0000000000000000000000000000000000000004",
+  "attributes": [],
+  "producerRepo": "https://github.com/your-organization/ops",
+  "safeNetwork": "ethereum"
+}
+```
+
+Put the generated `script/RelayAuthority.s.sol` in the ops repo with the SDK and Forge
+installed, commit it, and set `producer_commit` in the generated claim to that commit.
+The generated setup command assumes a pnpm lockfile. Set `producer_setup` to the ops repo's
+dependency installation command if it uses a different package manager.
+The script checks the selected receiver head and graph hash at the pinned destination
+block and reproduces the source fee quote and Safe transaction on the pinned source fork.
+Forge Attest checks the regenerated Safe transaction hash. Run the claim using the
+normal Forge Attest signing flow. Check the live destination head again before sending
+a later relay.
 
 ### Standalone sends and direct delivery
 
@@ -562,7 +637,7 @@ these, and nothing here reads chain state:
 `deploy/CHECKS.md` section 7 in protocol says how to check each. An eid that belongs to another chain
 than its leaf's is not caught at creation either; that destination's bootstrap fails.
 
-**Not covered.** Authority relay and updates (sdk#14); live fee, gas, compose gas and payload cap
+**Not covered.** Live fee, gas, compose gas and payload cap
 validation (protocol #118); building the destination compose, which the factory does; planning plain
 OFT conduits; zkSync and Tron, whose CREATE2 formulas place the conduits elsewhere.
 

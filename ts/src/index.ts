@@ -1,3 +1,5 @@
+export * from "./authority.js";
+export * from "./authorityAttest.js";
 export * from "./bundle.js";
 export * from "./encoding.js";
 export * from "./lzOft.js";
