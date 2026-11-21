@@ -37,6 +37,7 @@ ABIS = [
     ('lzOftConduitFactoryAbi', 'evm', 'LzOftConduitFactory', 'LzOftConduitFactory'),
     ('lzOftTransmitterAbi', 'evm', 'LzOftTransmitter', 'LzOftTransmitter'),
     ('lzOftReceiverAbi', 'evm', 'LzOftReceiver', 'LzOftReceiver'),
+    ('sourceAuthorityGuardAbi', 'safe-guard', 'ISourceAuthorityGuard', 'ISourceAuthorityGuard'),
 ]
 # Functions and events each trimmed ABI keeps: what the builders and the README use, plus the signed-flow
 # views. Inherited access-control, ownership and admin members are dropped. Every custom error is kept so
