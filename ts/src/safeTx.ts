@@ -115,7 +115,7 @@ export function safeTxHashes({ chainId, safe, tx }: SafeTxEnvelope): { domainHas
 }
 
 /** `CrossecuteScript._multiSendPacked` followed by the `multiSend` call. */
-export function multiSendData(calls: Plan["calls"]): Hex {
+export function multiSendData(calls: readonly { to: Address; value: bigint; data: Hex }[]): Hex {
   const packed = concat(
     calls.flatMap((c) => [
       "0x00",

@@ -1,12 +1,13 @@
+import { readFileSync } from "node:fs";
 import {
   type Address, type Hex, ContractFunctionRevertedError, concatHex, decodeFunctionData, encodeAbiParameters,
-  encodeFunctionData, encodeFunctionResult, keccak256, parseAbi, toHex, zeroHash,
+  encodeFunctionData, encodeFunctionResult, keccak256, pad, parseAbi, size, toHex, zeroHash,
 } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import {
-  type AuthorityGraph, AuthoritySource, authorityExecution, authorityGraphHash, buildAuthorityProposal, buildAuthorityRelayBatch,
-  encodeEvm, planAuthorityCatchUp, planAuthorityProposal, prepareAuthorityExecution, safeTxHashes, scaffoldAuthorityRelay, scaffoldAuthorityRelayBatch,
-  signedReceiverAbi, signedTransmitterAbi, sourceAuthorityGuardAbi, submitAuthorityBatchData,
+  type AuthorityGraph, type AuthorityRelayPlan, type NestedSafeApproval, AuthoritySource, authorityExecution, authorityGraphHash, buildAuthorityProposal, buildAuthorityRelayBatch,
+  buildAuthorityRelayProposal, encodeEvm, planAuthorityCatchUp, planAuthorityProposal, prepareAuthorityExecution, staleAuthorityChildren, safeMessageHash, safeTxHashes, scaffoldAuthorityRelay, scaffoldAuthorityRelayBatch,
+  signedDispatchTx, signedReceiverAbi, signedTransmitterAbi, sourceAuthorityGuardAbi, submitAuthorityBatchData,
 } from "../src/index.js";
 
 const address = (n: number) => toHex(n, { size: 20 }) as Address;
@@ -33,14 +34,20 @@ const exec = parseAbi([
 const mutations = parseAbi(["function swapOwner(address previousOwner,address oldOwner,address newOwner)"]);
 const fields = signedReceiverAbi.find((entry) => entry.name === "submitAuthority")!.inputs;
 
-function published(nonce: bigint, currentGraph = graph, updateHead = oldHead, sourceSafe = safe, updated = currentGraph) {
+type Votes = { signatures: Hex; nestedApprovals: NestedSafeApproval[] };
+
+function published(
+  nonce: bigint, currentGraph = graph, updateHead = oldHead, sourceSafe = safe, updated = currentGraph,
+  sign: (head: Hex) => Votes = () => ({ signatures: signature, nestedApprovals: [] }),
+) {
   const draft = buildAuthorityProposal({
     ...base, safe: sourceSafe, nonce, currentGraph, newGraph: updated,
     selection: { updateHead, authorityHash: authorityGraphHash(chainId, currentGraph) },
     action: { kind: "adopt" },
   });
   const head = safeTxHashes(draft.envelope).safeTxHash;
-  const evidence = { signedSafeTx: { safeTx: draft.envelope.tx, signatures: signature }, nestedApprovals: [] };
+  const votes = sign(head);
+  const evidence = { signedSafeTx: { safeTx: draft.envelope.tx, signatures: votes.signatures }, nestedApprovals: votes.nestedApprovals };
   const bytes = encodeAbiParameters(fields, [evidence, updated, []]);
   return { head, bytes, draft };
 }
@@ -205,5 +212,131 @@ describe("authority updates", () => {
     });
     expect(proposal.childUpdates).toHaveLength(1);
     expect(proposal.childUpdates[0]).toMatchObject({ sourceSafe: child, newRecord: childBefore.nodes[0].record });
+  });
+  describe("nested child votes", () => {
+    const grand = address(20), gPos = toHex(5, { size: 32 });
+    const record = (safe: Address, owners: { owner: Address; kind: 0 | 1 }[]) => ({ safe, threshold: 1n, owners });
+    const grandRecord = record(grand, [{ owner, kind: 0 }]);
+    const childRecord = record(child, [{ owner: grand, kind: 1 }]);
+    const childGraph: AuthorityGraph = { nodes: [
+      { position: zeroHash, record: childRecord }, { position: gPos, record: grandRecord },
+    ] };
+    const parentGraph = (childPosition: Hex, childRec: AuthorityGraph["nodes"][number]["record"] = childRecord, withGrand = true): AuthorityGraph => ({ nodes: [
+      { position: zeroHash, record: record(safe, [{ owner: child, kind: 1 }]) },
+      { position: childPosition, record: childRec },
+      ...(withGrand ? [{ position: gPos, record: grandRecord }] : []),
+    ] });
+    // r = voter, s = offset of the dynamic part, v = 0, then length and bytes.
+    const contractVote = (inline: Hex) => concatHex([
+      pad(grand, { size: 32 }), toHex(65, { size: 32 }), "0x00", toHex(size(inline), { size: 32 }), inline,
+    ]);
+    const cachedApproval = (head: Hex): NestedSafeApproval => ({
+      childSafe: grand, messageHash: safeMessageHash(chainId, grand, head),
+      approval: { safeTx: signedDispatchTx(chainId, grand, guard, 1n, "0x").tx, signatures: signature },
+    });
+
+    async function plan(sign: (head: Hex) => Votes, updatedChild = childGraph, parentAfter = (head: Hex) => parentGraph(head)) {
+      const update = published(8n, childGraph, oldHead, child, updatedChild, sign);
+      const currentGraph = parentGraph(oldHead);
+      const parent = published(8n, currentGraph);
+      const submissions = new Map([[parent.head, parent.bytes], [update.head, update.bytes]]);
+      const readContract = vi.fn().mockImplementation(async ({ functionName, args }) => functionName === "selection"
+        ? { updateHead: parent.head, authorityHash: authorityGraphHash(chainId, currentGraph) }
+        : keccak256(submissions.get(args[1])!));
+      const getLogs = vi.fn().mockImplementation(async ({ args }) => [{
+        args: { submission: submissions.get(args.updateHead) }, blockNumber: 4n, logIndex: 0,
+      }]);
+      const source = new AuthoritySource({ readContract, getLogs, getTransaction: vi.fn() }, chainId, guard, 10n, 0n);
+      return planAuthorityProposal(source, { safe, nonce: 9n, newGraph: parentAfter(update.head), action: { kind: "adopt" } });
+    }
+
+    it("proves a nested voter from inline signatures", async () => {
+      const proposal = await plan((_) => ({ signatures: contractVote(signature), nestedApprovals: [] }));
+      expect(proposal.childUpdates).toHaveLength(1);
+      expect(proposal.childUpdates[0].sourceSafe).toBe(child);
+    });
+
+    it("proves a nested voter from a cached approval and rejects a missing one", async () => {
+      const proposal = await plan((head) => ({ signatures: contractVote("0x"), nestedApprovals: [cachedApproval(head)] }));
+      expect(proposal.childUpdates).toHaveLength(1);
+      await expect(plan(() => ({ signatures: contractVote("0x"), nestedApprovals: [] })))
+        .rejects.toThrow("missing approval");
+    });
+
+    it("counts a nested voter only where the voting update's new graph names it", async () => {
+      const without: AuthorityGraph = { nodes: [{ position: zeroHash, record: record(child, [{ owner: newOwner, kind: 0 }]) }] };
+      await expect(plan(
+        () => ({ signatures: contractVote(signature), nestedApprovals: [] }), without,
+        (head) => parentGraph(head, without.nodes[0].record, false),
+      )).rejects.toThrow("does not name nested voter");
+    });
+
+    it("reports children whose own selection moved past the parent's position", async () => {
+      const latest = toHex(9, { size: 32 });
+      const readContract = vi.fn().mockImplementation(async ({ args }) => ({
+        updateHead: args[0] === child ? latest : gPos, authorityHash: zeroHash,
+      }));
+      const source = new AuthoritySource({ readContract, getLogs: vi.fn(), getTransaction: vi.fn() }, chainId, guard, 10n, 0n);
+      await expect(staleAuthorityChildren(source, parentGraph(oldHead))).resolves.toEqual([
+        { safe: child, selectedHead: oldHead, latest: { updateHead: latest, authorityHash: zeroHash } },
+      ]);
+    });
+  });
+
+  it("bounds each log search by the newer update and names a receiver that is not an ancestor", async () => {
+    const first = published(8n);
+    const second = published(9n, graph, first.head);
+    const submissions = new Map([[first.head, first.bytes], [second.head, second.bytes]]);
+    const readContract = vi.fn().mockImplementation(async ({ args }) =>
+      submissions.has(args[1]) ? keccak256(submissions.get(args[1])!) : zeroHash);
+    const getLogs = vi.fn().mockImplementation(async ({ args }) => [{
+      args: { submission: submissions.get(args.updateHead) }, blockNumber: args.updateHead === second.head ? 7n : 4n, logIndex: 0,
+    }]);
+    const source = new AuthoritySource({ readContract, getLogs, getTransaction: vi.fn() }, chainId, guard, 10n, 0n);
+    await expect(source.successors(safe, oldHead, second.head)).resolves.toHaveLength(2);
+    expect(getLogs.mock.calls.map(([{ toBlock }]) => toBlock)).toEqual([10n, 7n]);
+    await expect(source.successors(safe, toHex(77, { size: 32 }), second.head)).rejects.toThrow("not an ancestor");
+  });
+
+  it("accepts owner mutations in any hex case", () => {
+    const swap = encodeFunctionData({ abi: mutations, functionName: "swapOwner", args: [address(1), owner, newOwner] });
+    const input = (data: Hex) => ({
+      ...base, selection, currentGraph: graph, newGraph: graphFor(safe, newOwner),
+      action: { kind: "ownership" as const, multiSend: multicall, mutations: [data] },
+    });
+    const upper = `0x${swap.slice(2).toUpperCase()}` as Hex;
+    expect(buildAuthorityProposal(input(upper)).envelope.tx.data).toBe(buildAuthorityProposal(input(swap)).envelope.tx.data);
+  });
+
+  describe("Solidity relay vectors", () => {
+    const read = (name: string) => JSON.parse(readFileSync(new URL(`../../vectors/${name}.json`, import.meta.url), "utf8"));
+    const update = (submission: Hex) => ({ bytes: submission }) as never;
+
+    it("derives the single relay's Safe transaction hash", async () => {
+      const v = read("authority-relay-single");
+      const readContract = vi.fn().mockResolvedValue(BigInt(v.fee));
+      const envelope = await buildAuthorityRelayProposal({
+        rpc: { readContract }, chainId: BigInt(v.chainId), safe: v.safe, nonce: BigInt(v.nonce), transmitter: v.transmitter,
+        recipient: v.recipient, attributes: [v.attribute], update: update(v.submission), blockNumber: 1n,
+      });
+      expect(safeTxHashes(envelope).safeTxHash).toBe(v.safeTxHash);
+      expect(readContract.mock.calls[0][0].account).toBe(v.safe);
+    });
+
+    it("derives the batch relay's Safe transaction hash, quoting as the multicall", async () => {
+      const v = read("authority-relay-batch");
+      const fees = new Map<string, bigint>(v.transmitters.map((t: string, i: number) => [t, BigInt(v.fees[i])]));
+      const readContract = vi.fn().mockImplementation(async ({ address, account }) => {
+        if (account !== v.multicall) throw new Error("quote must come from the multicall");
+        return fees.get(address)!;
+      });
+      const plans = v.transmitters.map((transmitter: Address, i: number) => ({
+        envelope: signedDispatchTx(BigInt(v.chainId), v.safe, transmitter, BigInt(v.nonce), "0x"), sourceBlock: 1n,
+        destinationChainId: BigInt(i + 1), receiver: address(100 + i), recipient: v.recipient, attributes: [v.attribute],
+        update: update(v.submission),
+      })) as unknown as AuthorityRelayPlan[];
+      const batch = await buildAuthorityRelayBatch(plans, v.multicall, { readContract });
+      expect(safeTxHashes(batch).safeTxHash).toBe(v.safeTxHash);
+    });
   });
 });

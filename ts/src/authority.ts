@@ -1,9 +1,9 @@
 import {
   type Address, type Hex, type PublicClient, BaseError, ContractFunctionRevertedError, concatHex, decodeAbiParameters, decodeFunctionData, decodeFunctionResult, encodeAbiParameters,
-  encodeFunctionData, encodePacked, isAddressEqual, keccak256, parseAbi, sliceHex, size, toFunctionSelector, zeroHash,
+  encodeFunctionData, isAddressEqual, keccak256, parseAbi, sliceHex, size, toFunctionSelector, zeroHash,
 } from "viem";
 import { type Call, encodeEvm } from "./encoding.js";
-import { type SafeTxEnvelope, safeTxHashes } from "./safeTx.js";
+import { type SafeTxEnvelope, multiSendData, safeTxHashes } from "./safeTx.js";
 import {
   type AuthorityGraph, type NestedSafeApproval, authorityGraphHash, authorityRecordHash, signedDispatchTx,
   validateAuthorityGraph, safeMessageHash,
@@ -58,10 +58,6 @@ export type AuthorityProposal = {
   childUpdates: readonly ChildUpdate[];
 };
 
-function packCall({ target, value, data }: Call): Hex {
-  return encodePacked(["uint8", "address", "uint256", "uint256", "bytes"], [0, target, value, BigInt(size(data)), data]);
-}
-
 type AuthorityAction =
   | { kind: "activate" }
   | { kind: "adopt" }
@@ -97,17 +93,17 @@ export function buildAuthorityProposal({
     const data = encodeFunctionData({ abi: sourceAuthorityGuardAbi, functionName: "selectAuthority", args: [update] });
     return { envelope: signedDispatchTx(chainId, safe, guard, nonce, data), guard, currentGraph, newGraph, childUpdates };
   }
-  if (!action.mutations.length || action.mutations.some((data) => mutationLengths.get(sliceHex(data, 0, 4)) !== size(data))) {
+  const mutations = action.mutations.map((data) => data.toLowerCase() as Hex);
+  if (!mutations.length || mutations.some((data) => mutationLengths.get(sliceHex(data, 0, 4)) !== size(data))) {
     throw new Error("ownership changes require valid Safe owner mutations");
   }
   const registration = encodeFunctionData({
     abi: sourceAuthorityGuardAbi, functionName: "registerOwnershipChange", args: [update],
   });
-  const packed = [
-    packCall({ target: guard, value: 0n, data: registration }),
-    ...action.mutations.map((data) => packCall({ target: safe, value: 0n, data })),
-  ];
-  const data = encodeFunctionData({ abi: safeAbi, functionName: "multiSend", args: [`0x${packed.map((part) => part.slice(2)).join("")}`] });
+  const data = multiSendData([
+    { to: guard, value: 0n, data: registration },
+    ...mutations.map((mutation) => ({ to: safe, value: 0n, data: mutation })),
+  ]);
   const envelope = signedDispatchTx(chainId, safe, action.multiSend, nonce, data);
   envelope.tx.operation = 1;
   return { envelope, guard, currentGraph, newGraph, childUpdates };
@@ -230,10 +226,10 @@ export class AuthoritySource {
   }
 
   private async findLog<Log>(
-    name: string, sourceSafe: Address, updateHead: Hex,
+    name: string, sourceSafe: Address, updateHead: Hex, atOrBefore: bigint,
     search: (fromBlock: bigint, toBlock: bigint) => Promise<readonly Log[]>,
   ): Promise<Log> {
-    for (let end = this.blockNumber; end >= this.fromBlock;) {
+    for (let end = atOrBefore < this.blockNumber ? atOrBefore : this.blockNumber; end >= this.fromBlock;) {
       const start = end - this.fromBlock >= this.logRange ? end - this.logRange + 1n : this.fromBlock;
       const hits = await search(start, end);
       if (hits.length > 1) throw new Error(`multiple ${name} logs for ${updateHead}`);
@@ -243,13 +239,22 @@ export class AuthoritySource {
     throw new Error(`RPC history is missing ${name} for ${sourceSafe} at ${updateHead}`);
   }
 
-  async submission(sourceSafe: Address, updateHead: Hex): Promise<PublishedAuthority> {
-    const hash = await this.rpc.readContract({
+  private publishedHash(sourceSafe: Address, updateHead: Hex): Promise<Hex> {
+    return this.rpc.readContract({
       address: this.guard, abi: sourceAuthorityGuardAbi, functionName: "publishedAuthority",
       args: [sourceSafe, updateHead], blockNumber: this.blockNumber,
     });
+  }
+
+  /** `atOrBefore` bounds the log search: an update executes no later than a head built on it. */
+  async submission(sourceSafe: Address, updateHead: Hex, atOrBefore = this.blockNumber): Promise<PublishedAuthority> {
+    const hash = await this.publishedHash(sourceSafe, updateHead);
     if (hash === zeroHash) throw new Error(`no source publication for ${sourceSafe} at ${updateHead}`);
-    const log = await this.findLog(authorityPublished.name, sourceSafe, updateHead, (fromBlock, toBlock) => this.rpc.getLogs({
+    return this.loadSubmission(sourceSafe, updateHead, hash, atOrBefore);
+  }
+
+  private async loadSubmission(sourceSafe: Address, updateHead: Hex, hash: Hex, atOrBefore: bigint): Promise<PublishedAuthority> {
+    const log = await this.findLog(authorityPublished.name, sourceSafe, updateHead, atOrBefore, (fromBlock, toBlock) => this.rpc.getLogs({
       address: this.guard, event: authorityPublished, args: { sourceSafe, updateHead }, fromBlock, toBlock, strict: true,
     }));
     const { submission: bytes } = log.args;
@@ -266,16 +271,13 @@ export class AuthoritySource {
 
   async witness(sourceSafe: Address, selected: AuthoritySelection): Promise<AuthorityGraph> {
     if (selected.authorityHash === zeroHash && selected.updateHead === zeroHash) return { nodes: [] };
-    const published = await this.rpc.readContract({
-      address: this.guard, abi: sourceAuthorityGuardAbi, functionName: "publishedAuthority",
-      args: [sourceSafe, selected.updateHead], blockNumber: this.blockNumber,
-    });
+    const published = await this.publishedHash(sourceSafe, selected.updateHead);
     let graph: AuthorityGraph;
     if (published !== zeroHash) {
-      graph = (await this.submission(sourceSafe, selected.updateHead)).newGraph;
+      graph = (await this.loadSubmission(sourceSafe, selected.updateHead, published, this.blockNumber)).newGraph;
     } else {
       const updateHead = selected.updateHead;
-      const log = await this.findLog(authorityExecuted.name, sourceSafe, updateHead, (fromBlock, toBlock) => this.rpc.getLogs({
+      const log = await this.findLog(authorityExecuted.name, sourceSafe, updateHead, this.blockNumber, (fromBlock, toBlock) => this.rpc.getLogs({
         address: this.guard, event: authorityExecuted, args: { sourceSafe, updateHead }, fromBlock, toBlock, strict: true,
       }));
       if (log.args.authorityHash !== selected.authorityHash) throw new Error("activation log has the wrong authority hash");
@@ -302,11 +304,17 @@ export class AuthoritySource {
     if (fromHead === zeroHash || toHead === zeroHash) throw new Error("catch-up requires initialized authority heads");
     const updates: PublishedAuthority[] = [];
     const seen = new Set<Hex>();
+    let atOrBefore = this.blockNumber;
     for (let head = toHead; head !== fromHead;) {
       if (seen.has(head)) throw new Error("cycle in published authority history");
       seen.add(head);
-      const update = await this.submission(sourceSafe, head);
+      const hash = await this.publishedHash(sourceSafe, head);
+      if (hash === zeroHash) {
+        throw new Error(`receiver head ${fromHead} is not an ancestor of ${toHead}: the receiver is ahead of source block ${this.blockNumber} or on another branch`);
+      }
+      const update = await this.loadSubmission(sourceSafe, head, hash, atOrBefore);
       updates.push(update);
+      atOrBefore = update.blockNumber;
       head = update.previousUpdateHash;
     }
     return updates.reverse();
@@ -340,7 +348,7 @@ export async function planChildUpdates(
   const key = (safe: Address, position: Hex) => `${safe.toLowerCase()}:${position}`;
   for (const [safe, node] of selected) proven.set(`${safe}:${node.position}`, node.record);
 
-  async function prove(safe: Address, position: Hex): Promise<AuthorityGraph["nodes"][number]["record"]> {
+  async function prove(safe: Address, position: Hex, atOrBefore = source.blockNumber): Promise<AuthorityGraph["nodes"][number]["record"]> {
     const id = key(safe, position);
     const existing = proven.get(id);
     if (existing) return existing;
@@ -348,8 +356,9 @@ export async function planChildUpdates(
     if (open.has(id)) throw new Error(`circular child update proof at ${id}`);
     open.add(id);
 
-    const update = await source.submission(safe, position);
-    const prior = await prove(safe, update.previousUpdateHash);
+    const update = await source.submission(safe, position, atOrBefore);
+    const prior = await prove(safe, update.previousUpdateHash, update.blockNumber);
+    // The receiver counts a nested voter at the position the voting update's new graph names for it.
     const positions = new Map(update.newGraph.nodes.slice(1).map((node) => [node.record.safe.toLowerCase(), node]));
     const { evidence } = update;
 
@@ -360,7 +369,7 @@ export async function planChildUpdates(
         const child = sliceHex(signatures, offset + 12, offset + 32);
         const named = positions.get(child.toLowerCase());
         if (!named) throw new Error(`published vote does not name nested voter ${child}`);
-        const record = await prove(child, named.position);
+        const record = await prove(child, named.position, update.blockNumber);
         if (authorityRecordHash(record) !== authorityRecordHash(named.record)) throw new Error("nested voter record mismatch");
         const at = Number(BigInt(sliceHex(signatures, offset + 32, offset + 64)));
         const length = Number(BigInt(sliceHex(signatures, at, at + 32)));
@@ -444,12 +453,9 @@ export function receiverAuthoritySelection(
 
 /** Warn when a child has advanced independently of its parent's selected graph. */
 export async function staleAuthorityChildren(source: AuthoritySource, graph: AuthorityGraph) {
-  const stale = [];
-  for (const node of graph.nodes.slice(1)) {
-    const latest = await source.selection(node.record.safe);
-    if (latest.updateHead !== node.position) stale.push({ safe: node.record.safe, selectedHead: node.position, latest });
-  }
-  return stale;
+  const latest = await Promise.all(graph.nodes.slice(1).map((node) => source.selection(node.record.safe)));
+  return graph.nodes.slice(1).flatMap((node, i) => latest[i].updateHead === node.position ? []
+    : [{ safe: node.record.safe, selectedHead: node.position, latest: latest[i] }]);
 }
 
 export async function planAuthorityCatchUp({
