@@ -8,7 +8,7 @@ import { signedTransmitterAbi, signedReceiverAbi, crossecuteGuardAbi, safeBatchE
 
 export const WIRE_STANDALONE = 1n;
 export const WIRE_MERKLE = 2n;
-/** Leading word of an authority submission. This package does not build authority submissions (sdk#14). */
+/** Leading word of an authority submission. */
 export const WIRE_AUTHORITY = 3n;
 /** Immediate owners allowed per Safe in a selected graph. */
 export const MAX_SAFE_OWNERS = 16;
