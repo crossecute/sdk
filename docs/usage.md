@@ -263,7 +263,8 @@ source relay receipt alone does not establish destination delivery. Direct submi
 encode an ordered, atomic destination batch with `submitAuthorityBatchData`. For independent
 receivers, `scaffoldAuthorityRelayBatch` generates a single Safe proposal using a CALL to
 Multicall3 with one successor per receiver. The batch pins the exact native value of each
-call. Requote if provider fees change before execution.
+call, and the generated script rejects relays that differ in source chain, Safe or nonce.
+Requote if provider fees change before execution.
 
 Run `crossecute authority-relay relay-config.json relay-files` to generate a Forge producer
 script and an `attest.toml` for the next relay proposal. Set the named RPC environment

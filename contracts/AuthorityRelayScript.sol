@@ -39,6 +39,11 @@ abstract contract AuthorityRelayScript is Script {
 
     error WrongRelayChain(uint256 expected, uint256 actual);
     error ReceiverSelectionChanged();
+    error InvalidRelayBatch();
+    error RelayBatchMismatch(uint256 index);
+
+    // Fork id + 1 per (destination RPC, block), so relays to one destination share a fork.
+    mapping(bytes32 => uint256) private _destinationForks;
 
     function _writeAuthorityRelay(Relay memory relay, string memory destinationRpc, string memory output) internal {
         _checkAuthorityRelaySelection(relay, destinationRpc);
@@ -52,30 +57,52 @@ abstract contract AuthorityRelayScript is Script {
         address multicall,
         string memory output
     ) internal {
+        if (relays.length != destinationRpcs.length) revert InvalidRelayBatch();
+        SafeTx memory proposal = _authorityRelayBatchTx(relays, multicall);
+        for (uint256 i; i < relays.length; ++i) {
+            _checkAuthorityRelaySelection(relays[i], destinationRpcs[i]);
+        }
+        vm.writeFile(output, PlanJson.safeTxTypedData(relays[0].sourceChainId, relays[0].safe, proposal));
+    }
+
+    function _authorityRelayBatchTx(Relay[] memory relays, address multicall) internal returns (SafeTx memory) {
+        if (relays.length == 0) revert InvalidRelayBatch();
         Relay memory first = relays[0];
         uint256 total;
         IAuthorityRelayMulticall.Call3Value[] memory calls = new IAuthorityRelayMulticall.Call3Value[](relays.length);
         for (uint256 i; i < relays.length; ++i) {
-            _checkAuthorityRelaySelection(relays[i], destinationRpcs[i]);
+            if (
+                relays[i].sourceChainId != first.sourceChainId || relays[i].safe != first.safe
+                    || relays[i].nonce != first.nonce
+            ) revert RelayBatchMismatch(i);
             SafeTx memory relayTx = _authorityRelayTx(relays[i], multicall);
             total += relayTx.value;
             calls[i] = IAuthorityRelayMulticall.Call3Value(relayTx.to, false, relayTx.value, relayTx.data);
         }
         bytes memory data = abi.encodeCall(IAuthorityRelayMulticall.aggregate3Value, (calls));
-        SafeTx memory proposal = _safeRelayProposal(multicall, first.nonce, total, data);
-        vm.writeFile(output, PlanJson.safeTxTypedData(first.sourceChainId, first.safe, proposal));
+        return _safeRelayProposal(multicall, first.nonce, total, data);
     }
 
     function _checkAuthorityRelaySelection(Relay memory relay, string memory destinationRpc) private {
         if (block.chainid != relay.sourceChainId) revert WrongRelayChain(relay.sourceChainId, block.chainid);
         uint256 sourceFork = vm.activeFork();
-        vm.selectFork(vm.createFork(destinationRpc, relay.destinationBlock));
+        vm.selectFork(_destinationFork(destinationRpc, relay.destinationBlock));
         if (block.chainid != relay.destinationChainId) revert WrongRelayChain(relay.destinationChainId, block.chainid);
         (bytes32 head, bytes32 authorityHash) = IAuthorityRelayReceiver(relay.receiver).selection();
         if (head != relay.previousHead || authorityHash != relay.previousAuthorityHash) {
             revert ReceiverSelectionChanged();
         }
         vm.selectFork(sourceFork);
+    }
+
+    function _destinationFork(string memory rpc, uint256 blockNumber) private returns (uint256) {
+        bytes32 key = keccak256(abi.encode(rpc, blockNumber));
+        uint256 id = _destinationForks[key];
+        if (id == 0) {
+            id = vm.createFork(rpc, blockNumber) + 1;
+            _destinationForks[key] = id;
+        }
+        return id - 1;
     }
 
     function _authorityRelayTx(Relay memory relay, address quoteAccount) internal returns (SafeTx memory) {

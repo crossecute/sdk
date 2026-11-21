@@ -14,7 +14,7 @@ git -C "$work" init -q
 git -C "$work" fetch -q --depth 1 https://github.com/crossecute/forge-attest "$commit"
 git -C "$work" checkout -q FETCH_HEAD
 
-for name in test test-authority-relay; do
+for name in test test-authority-relay test-authority-relay-batch; do
   bash "$work/lib/normalize.sh" --input "$root/out/$name-safe-tx.json" --format safe-eip712 >"$work/canonical.json"
   theirs="$(bash "$work/lib/derive.sh" "$work/canonical.json" | sed -n 's/^SAFE_TX_HASH=//p')"
   ours="$(cat "$root/out/$name-safe-tx-hash.txt")"
