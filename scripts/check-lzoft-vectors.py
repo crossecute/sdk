@@ -118,7 +118,7 @@ contract {NAME} is Script {{
 {chr(10).join(body)}
         require(bytes4(LzMessage.OPTIONS_ATTRIBUTE) == {f['selector']}, 'options attribute');
         address f = {f['factory']};
-        vm.etch(f, address(new LzOftConduitFactory(address(new Impl()), address(new Impl()))).code);
+        vm.etch(f, address(new LzOftConduitFactory(address(new Impl()), address(new Impl()), address(uint160(0x7ea5)))).code);
         LzOftConduitFactory factory = LzOftConduitFactory(f);
         require(factory.PROXY_INIT_CODE_HASH() == {f['proxyHash']}, 'proxy initcode hash');
         bytes32 destRoot = LzOftMessage.root(_prefix(hashes, {n}));

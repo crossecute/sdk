@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
 import {ReceiverNonce} from "../contracts/MerklePackage.sol";
-import {ExecutionLeaf} from "../contracts/vendor/protocol135/SignedDispatchTypes.sol";
+import {ExecutionLeaf} from "@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol";
 
 /// @dev Leaves that `ts/test/merkle.test.ts` builds from the same definitions. `guard` leaves are those of
 ///      the protocol guard's `test_publish_matchesOffchainVector`.

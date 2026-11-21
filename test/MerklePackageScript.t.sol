@@ -5,9 +5,10 @@ import {Test} from "forge-std/Test.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 import {Erc7930} from "@crossecute/protocol/addressing/Erc7930.sol";
+import {ISignedReceiver} from "@crossecute/protocol/messaging/inbound/ISignedReceiver.sol";
 import {OwnableTransmitter} from "@crossecute/protocol/messaging/outbound/OwnableTransmitter.sol";
 import {CrossecuteScript} from "../contracts/CrossecuteScript.sol";
-import {IReceiverNonce, MerklePackageScript} from "../contracts/MerklePackageScript.sol";
+import {MerklePackageScript} from "../contracts/MerklePackageScript.sol";
 import {MerklePackage, MerklePackages} from "../contracts/MerklePackage.sol";
 import {MerklePackageJson} from "../contracts/MerklePackageJson.sol";
 import {SignedDispatch} from "../contracts/SignedDispatch.sol";
@@ -83,9 +84,7 @@ contract MerklePackageScriptTest is Test {
     }
 
     function test_mockMatchesProtocolSelector() public view {
-        MockSignedReceiver m = receiver;
-        IReceiverNonce r = IReceiverNonce(address(receiver));
-        assertEq(m.nextNonce.selector, r.nextNonce.selector);
+        assertEq(receiver.nextNonce.selector, ISignedReceiver.nextNonce.selector);
     }
 
     function test_receiverAndNonceComeFromTheConduit() public {

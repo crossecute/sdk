@@ -52,16 +52,15 @@ jobs:
       - run: scripts/check-forge-attest.sh
         if: matrix.manager == 'pnpm'
 
-  # The pin is a commit on protocol's #135 branch, not a merge commit. This fails if the vendored
-  # snapshot, generated ABIs, authority vectors or OFT pins differ from what that commit produces, or the OFT
-  # vectors differ from what its contracts compute.
+  # The pin is the commit of the protocol release's tag. This fails if the generated ABIs, authority vectors or
+  # OFT pins differ from what that commit produces, or the OFT vectors differ from what its contracts compute.
   protocol-pin:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - id: pin
-        run: echo "revision=$(jq -r .revision contracts/vendor/protocol135/manifest.json)" >> "$GITHUB_OUTPUT"
+        run: echo "revision=$(python3 scripts/sync-protocol.py --revision)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,7 +81,7 @@ jobs:
       - run: forge build src
         working-directory: protocol/contracts/safe-guard
 
-      - run: python3 scripts/sync-protocol135.py --check protocol
+      - run: python3 scripts/sync-protocol.py --check protocol
 
       # Runs protocol's LzOftMessage, LzMessage and LzOftConduitFactory over vectors/lzoft.json; protocol has no
       # literal OFT vectors to copy. Adds and removes a script in the disposable checkout. `forge script` compiles

@@ -6,10 +6,11 @@ transaction planning, verification, and Safe-signed dispatch.
 ## Install
 
 ```bash
-pnpm add @crossecute/sdk @crossecute/protocol viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
+pnpm add @crossecute/sdk @crossecute/protocol@0.2.0 viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
 ```
 
-With npm, use `npm install` with the same packages.
+With npm, use `npm install` with the same packages. The SDK is built against `@crossecute/protocol` 0.2.0, so install
+that version and let both packages resolve one copy.
 
 Foundry remappings:
 
@@ -183,19 +184,17 @@ SDK's MultiSendCallOnly table, and the TypeScript tests check their copies again
 TypeScript tests also read files the Foundry tests write under `out/`, so run `forge test`
 first.
 
-## Safe-signed dispatch (protocol PR #135)
+## Safe-signed dispatch
 
-The signed API targets protocol revision
-[`3169f8c`](https://github.com/crossecute/protocol/commit/3169f8cb72721330ec0af7b0235eeaf6877b9c74),
-the tip of #135. It includes `SafeTxEvidence { signedSafeTx, nestedApprovals }`, `SignedSafeTx`,
-`NestedSafeApproval`, `AuthorityGraph`, execution leaves, `SignedBootstrap`, and the current
-transmitter, receiver (including nonce and authority views), transceiver, guard, and
-`SafeBatchExecutor` ABIs, trimmed to the functions and events the builders and this document use
-plus every custom error, so reverts decode; inherited access-control and admin members are omitted. The published protocol 0.1.0
-package predates these interfaces: the SDK includes a small MIT compatibility snapshot
-under `contracts/vendor/protocol135`, with original-source checksums and a refresh script;
-`ts/test/protocol135.test.ts` fails if the manifest, vendored files, generated ABIs and
-`PROTOCOL_135_REVISION` disagree.
+The signed API is built against `@crossecute/protocol` 0.2.0. It includes `SafeTxEvidence { signedSafeTx,
+nestedApprovals }`, `SignedSafeTx`, `NestedSafeApproval`, `AuthorityGraph`, execution leaves,
+`SignedBootstrap`, and the current transmitter, receiver (including nonce and authority views), transceiver,
+guard, and `SafeBatchExecutor` ABIs, trimmed to the functions and events the builders and this document use
+plus every custom error, so reverts decode; inherited access-control and admin members are omitted. The
+Solidity types come from the package's sources. `scripts/sync-protocol.py` generates `ts/src/signedAbi.ts`,
+`vectors/authority.json` and `vectors/lzoft-protocol.json` from the release's tagged commit, CI regenerates
+them and fails on a difference, and `ts/test/protocolRelease.test.ts` fails if the dependency, the pinned
+version and revision, and the generated files disagree.
 The existing plain planner and `crossecute check` still handle plain plans only.
 
 ### Authority model
@@ -429,8 +428,8 @@ live provider cap, fee, simulation result, signature quorum or destination state
 `bootstrapBody(guard, updateHead, graph, setupCalls)` and `bootstrapData(destinationChainIdentifier, body,
 attributes)` build the bootstrap of the previous section without validating the graph. Import `ExecutionLeaf`,
 `SafeTxEvidence`, and `NestedSafeApproval` from
-`@crossecute/sdk/vendor/protocol135/SignedDispatchTypes.sol` and `AuthorityGraph` from
-`@crossecute/sdk/vendor/protocol135/AuthorityGraph.sol`; `SafeTx` in `Types.sol` re-exports
+`@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol` and `AuthorityGraph` from
+`@crossecute/protocol/messaging/authority/AuthorityGraph.sol`; `SafeTx` in `Types.sol` re-exports
 the shared guard type. Build individual signed transactions with
 `SignedDispatch.transaction(transmitter, nonce, data, value)`, hash with `SafeTxHash`, and
 write Forge Attest input with `PlanJson.safeTxTypedData(homeChainId, ownerSafe, tx)`.
@@ -545,7 +544,7 @@ its own signing flow.
 The `layerzero-oft` binding sends every message through an OFT its own team operates, from the
 conduit itself, and a factory with no owner creates the conduit at home and its receiver on each
 destination. Its rules are protocol's
-[`docs/layerzero-oft-spec.md`](https://github.com/crossecute/protocol/blob/3169f8cb72721330ec0af7b0235eeaf6877b9c74/docs/layerzero-oft-spec.md)
+[`docs/providers/layerzero-oft-spec.md`](https://github.com/crossecute/protocol/blob/npm-v0.2.0/docs/providers/layerzero-oft-spec.md)
 (L1 to L5 and the OFT prerequisites O1 to O7). The signed entry points are the ones of the sections
 above and are unchanged: `signedSendData`, `registerRootData`, `relayLeafData`, `submitLeafData`,
 `submitMessageData`, `signedBootstrapData`, the Merkle package and the delivery bundle. The OFT

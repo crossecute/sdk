@@ -26,7 +26,7 @@ const evidence: s.SafeTxEvidence = {
 const second: s.ExecutionLeaf = { ...leaf, nonce: 8n, calls: "0x010203" };
 const fields = [s.encodeExecutionLeaf(leaf), s.encodeExecutionLeaf(second), "0xaabbcc"] as Hex[];
 
-describe("protocol #135 Solidity parity", () => {
+describe("signed dispatch Solidity parity", () => {
   const checks: Record<string, () => Hex> = {
     executionFields: () => s.encodeExecutionLeaf(leaf), executionHash: () => s.executionLeafHash(leaf),
     executionId: () => s.executionId(leaf), authorityGraph: () => s.encodeAuthorityGraph(graph),

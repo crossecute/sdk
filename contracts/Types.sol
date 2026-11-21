@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {SafeTx} from "./vendor/protocol135/ICrossecuteGuard.sol";
+import {SafeTx} from "@crossecute/protocol/safe-guard/ICrossecuteGuard.sol";
 
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 

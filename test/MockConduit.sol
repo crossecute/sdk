@@ -209,7 +209,7 @@ contract Counter {
     }
 }
 
-/// @notice A signed receiver's `nextNonce`, as the protocol's generated `signedReceiverAbi` declares it.
+/// @notice A signed receiver's `nextNonce`, as `ISignedReceiver` declares it.
 contract MockSignedReceiver {
     uint256 public nextNonce;
 

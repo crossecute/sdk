@@ -5,15 +5,11 @@ import {console2} from "forge-std/console2.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 import {Erc7930} from "@crossecute/protocol/addressing/Erc7930.sol";
-import {ExecutionLeaf} from "./vendor/protocol135/SignedDispatchTypes.sol";
+import {ExecutionLeaf} from "@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol";
+import {ISignedReceiver} from "@crossecute/protocol/messaging/inbound/ISignedReceiver.sol";
 import {CrossecuteScript} from "./CrossecuteScript.sol";
 import {MerklePackage, ReceiverNonce, MerklePackages} from "./MerklePackage.sol";
 import {MerklePackageJson} from "./MerklePackageJson.sol";
-
-/// @notice The signed receiver's next execution nonce.
-interface IReceiverNonce {
-    function nextNonce() external view returns (uint256);
-}
 
 /// @title MerklePackageScript
 /// @notice Base for scripts that draft the Merkle package behind a signed `registerRoot`. Like
@@ -107,7 +103,7 @@ abstract contract MerklePackageScript is CrossecuteScript {
         if (receiver.code.length == 0) {
             console2.log("receiver %s on chain %s is not deployed: nonces start at 0", receiver, chainId);
         } else {
-            (bool ok, bytes memory ret) = receiver.staticcall(abi.encodeCall(IReceiverNonce.nextNonce, ()));
+            (bool ok, bytes memory ret) = receiver.staticcall(abi.encodeCall(ISignedReceiver.nextNonce, ()));
             if (!ok || ret.length != 32) revert ReceiverNonceUnreadable(chainId, receiver);
             next = abi.decode(ret, (uint256));
         }

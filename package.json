@@ -35,7 +35,7 @@
     "test:attest": "scripts/check-forge-attest.sh"
   },
   "dependencies": {
-    "@crossecute/protocol": "0.1.0"
+    "@crossecute/protocol": "0.2.0"
   },
   "peerDependencies": {
     "@openzeppelin/contracts": "5.4.0",
