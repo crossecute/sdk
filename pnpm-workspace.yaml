@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@crossecute/protocol@0.2.0'
