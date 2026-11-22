@@ -128,12 +128,12 @@ library SignedDispatch {
         return abi.encode(WIRE_STANDALONE, evidence);
     }
 
-    function merkleWire(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof)
+    function merkleWire(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory siblings)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encode(WIRE_MERKLE, evidence, leaf, proof);
+        return abi.encode(WIRE_MERKLE, evidence, leaf, siblings);
     }
 
     /// @notice `abi.encode(SignedBootstrap)` for the guard's selected `updateHead` and graph, with
@@ -147,23 +147,23 @@ library SignedDispatch {
         return abi.encode(SignedBootstrap(guard, updateHead, abi.encode(graph), setupCalls));
     }
 
-    function relayData(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof)
+    function relayData(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory siblings)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encodeCall(ISignedTransmitter.relayLeaf, (evidence, leaf, proof));
+        return abi.encodeCall(ISignedTransmitter.relayLeaf, (evidence, leaf, siblings));
     }
 
     function submitData(SafeTxEvidence memory evidence) internal pure returns (bytes memory) {
         return abi.encodeCall(ISignedReceiver.submitMessage, (evidence));
     }
 
-    function submitData(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory proof)
+    function submitData(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory siblings)
         internal
         pure
         returns (bytes memory)
     {
-        return abi.encodeCall(ISignedReceiver.submitLeaf, (evidence, leaf, proof));
+        return abi.encodeCall(ISignedReceiver.submitLeaf, (evidence, leaf, siblings));
     }
 }
