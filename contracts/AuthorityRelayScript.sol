@@ -4,7 +4,9 @@ pragma solidity ^0.8.28;
 import {Script} from "forge-std/Script.sol";
 import {PlanJson} from "./PlanJson.sol";
 import {SafeTx} from "./Types.sol";
+import {IReceiverAuthority} from "@crossecute/protocol/messaging/authority/IReceiverAuthority.sol";
 import {ISignedTransmitter} from "@crossecute/protocol/messaging/outbound/ISignedTransmitter.sol";
+import {AuthoritySelection} from "@crossecute/protocol/safe-guard/authority/AuthorityUpdateTypes.sol";
 
 interface IAuthorityRelayMulticall {
     struct Call3Value {
@@ -15,10 +17,6 @@ interface IAuthorityRelayMulticall {
     }
 
     function aggregate3Value(Call3Value[] calldata calls) external payable;
-}
-
-interface IAuthorityRelayReceiver {
-    function selection() external view returns (bytes32 updateHead, bytes32 authorityHash);
 }
 
 abstract contract AuthorityRelayScript is Script {
@@ -88,8 +86,8 @@ abstract contract AuthorityRelayScript is Script {
         uint256 sourceFork = vm.activeFork();
         vm.selectFork(_destinationFork(destinationRpc, relay.destinationBlock));
         if (block.chainid != relay.destinationChainId) revert WrongRelayChain(relay.destinationChainId, block.chainid);
-        (bytes32 head, bytes32 authorityHash) = IAuthorityRelayReceiver(relay.receiver).selection();
-        if (head != relay.previousHead || authorityHash != relay.previousAuthorityHash) {
+        AuthoritySelection memory selection = IReceiverAuthority(relay.receiver).selection();
+        if (selection.updateHead != relay.previousHead || selection.authorityHash != relay.previousAuthorityHash) {
             revert ReceiverSelectionChanged();
         }
         vm.selectFork(sourceFork);

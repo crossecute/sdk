@@ -282,7 +282,8 @@ nestedApprovals }`, `SignedSafeTx`, `NestedSafeApproval`, `AuthorityGraph`, exec
 `SignedBootstrap`, and the current transmitter, receiver (including nonce and authority views), transceiver,
 guard, and `SafeBatchExecutor` ABIs, trimmed to the functions and events the builders and this document use
 plus every custom error, so reverts decode; inherited access-control and admin members are omitted. The
-Solidity types come from the package's sources. `scripts/sync-protocol.py` generates `ts/src/signedAbi.ts`,
+Solidity types, conduit transceiver ABI, and guard ABI come from the installed protocol package.
+`scripts/sync-protocol.py` generates `ts/src/signedAbi.ts`,
 `vectors/authority.json` and `vectors/lzoft-protocol.json` from the release's tagged commit, CI regenerates
 them and fails on a difference, and `ts/test/protocolRelease.test.ts` fails if the dependency, the pinned
 version and revision, and the generated files disagree.

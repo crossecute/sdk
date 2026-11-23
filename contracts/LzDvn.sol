@@ -2,11 +2,8 @@
 pragma solidity ^0.8.28;
 
 import {ChainKey} from "@crossecute/protocol/addressing/ChainKey.sol";
-
-interface ILzConduitTransceiver {
-    function messageProvider() external view returns (bytes32);
-    function providerIdFor(bytes32 chainKey) external view returns (uint256);
-}
+import {TransceiverExtension} from "@crossecute/protocol/messaging/transceiver/TransceiverExtension.sol";
+import {IProviderIdTable} from "@crossecute/protocol/protocols/ProviderChainId.sol";
 
 interface ILzConduit {
     function endpoint() external view returns (address);
@@ -52,9 +49,9 @@ library LzDvn {
         view
         returns (bool dead, uint32 eid)
     {
-        if (ILzConduitTransceiver(transceiver).messageProvider() != PROVIDER) return (false, 0);
+        if (TransceiverExtension(payable(transceiver)).messageProvider() != PROVIDER) return (false, 0);
         // forge-lint: disable-next-line(unsafe-typecast) LayerZero eids are uint32 and set through a uint32 setter
-        eid = uint32(ILzConduitTransceiver(transceiver).providerIdFor(ChainKey.forEvm(chainId)));
+        eid = uint32(IProviderIdTable(transceiver).providerIdFor(ChainKey.forEvm(chainId)));
         ILzSendConfig endpoint = ILzSendConfig(ILzConduit(sender).endpoint());
         address lib = endpoint.getSendLibrary(sender, eid);
         UlnConfig memory uln = abi.decode(endpoint.getConfig(sender, lib, eid, CONFIG_TYPE_ULN), (UlnConfig));

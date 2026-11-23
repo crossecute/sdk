@@ -1,5 +1,6 @@
+import { IReceiverAuthorityAbi } from "@crossecute/protocol/abi";
 import {
-  type Address, type Hex, type PublicClient, BaseError, ContractFunctionRevertedError, concatHex, decodeAbiParameters, decodeFunctionData, decodeFunctionResult, encodeAbiParameters,
+  type Address, type ContractFunctionReturnType, type Hex, type PublicClient, BaseError, ContractFunctionRevertedError, concatHex, decodeAbiParameters, decodeFunctionData, decodeFunctionResult, encodeAbiParameters,
   encodeFunctionData, isAddressEqual, keccak256, parseAbi, sliceHex, size, toFunctionSelector, zeroHash,
 } from "viem";
 import { type Call, encodeEvm } from "./encoding.js";
@@ -32,7 +33,7 @@ const registrationSize = 4 + 2 * 32;
 const submissionTypes = signedReceiverAbi.find((entry) => entry.name === "submitAuthority")!.inputs;
 export type AuthoritySubmission = ReturnType<typeof decodeAuthoritySubmission>;
 export type ChildUpdate = AuthoritySubmission["childUpdates"][number];
-export type AuthoritySelection = { updateHead: Hex; authorityHash: Hex };
+export type AuthoritySelection = ContractFunctionReturnType<typeof IReceiverAuthorityAbi, "view", "selection">;
 
 export function decodeAuthoritySubmission(bytes: Hex) {
   const [evidence, newGraph, childUpdates] = decodeAbiParameters(submissionTypes, bytes);

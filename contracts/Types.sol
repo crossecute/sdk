@@ -5,13 +5,6 @@ import {SafeTx} from "@crossecute/protocol/safe-guard/ICrossecuteGuard.sol";
 
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 
-/// @notice A call the conduit's owner makes on the home chain.
-struct HomeCall {
-    address to;
-    uint256 value;
-    bytes data;
-}
-
 /// @notice One ordered batch for the conduit's receiver on one EVM destination, as simulated.
 struct Batch {
     uint256 chainId;
@@ -32,6 +25,6 @@ struct Plan {
     /// The quoted total of every call's fee. `calls[0].value` tops the transmitter up to cover
     /// it with the script's buffer.
     uint256 fee;
-    HomeCall[] calls;
+    Call[] calls;
     Batch[] batches;
 }

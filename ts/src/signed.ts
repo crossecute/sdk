@@ -1,5 +1,6 @@
+import { ISignedTransmitterAbi } from "@crossecute/protocol/abi";
 import {
-  type AbiParameter, type Address, type Hex, concat, encodeAbiParameters, encodeFunctionData,
+  type AbiParameter, type Address, type ContractFunctionArgs, type Hex, concat, encodeAbiParameters, encodeFunctionData,
   keccak256, stringToHex, zeroAddress, hashTypedData, zeroHash,
 } from "viem";
 import { encodeBootstrap } from "./encoding.js";
@@ -18,7 +19,7 @@ export type SafeAuthorityRecord = { safe: Address; threshold: bigint; owners: re
 export type SignedSafeTx = { safeTx: SafeTx; signatures: Hex };
 export type NestedSafeApproval = { childSafe: Address; messageHash: Hex; approval: SignedSafeTx };
 export type SafeTxEvidence = { signedSafeTx: SignedSafeTx; nestedApprovals: readonly NestedSafeApproval[] };
-export type ExecutionLeaf = { destination: Hex; nonce: bigint; validAfter: bigint; deadline: bigint; calls: Hex; attributes: readonly Hex[] };
+export type ExecutionLeaf = ContractFunctionArgs<typeof ISignedTransmitterAbi, "payable", "relayLeaf">[1];
 /** `position` is zero for the root and the selected update head of that Safe for every descendant. */
 export type AuthorityNode = { record: SafeAuthorityRecord; position: Hex };
 /** Nodes in canonical depth-first order; `nodes[0]` is the owner Safe. */

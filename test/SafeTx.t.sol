@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 import {CrossecuteScript} from "@crossecute/sdk/CrossecuteScript.sol";
 import {SafeTxHash} from "@crossecute/sdk/SafeTxHash.sol";
-import {HomeCall, Plan, SafeTx} from "@crossecute/sdk/Types.sol";
+import {Plan, SafeTx} from "@crossecute/sdk/Types.sol";
 import {Harness} from "./CrossecuteScript.t.sol";
 import {MockTransceiver, MockTransmitter, MockRegistry, MockSafe, Counter} from "./MockConduit.sol";
 
@@ -81,6 +81,30 @@ contract SafeTxTest is Test {
         assertEq(SafeTxHash.DOMAIN_TYPEHASH, 0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218);
     }
 
+    function testFuzz_hashMatchesSafeForAllFields(SafeTx memory t) public view {
+        bytes32 expected = safe.getTransactionHash(
+            t.to,
+            t.value,
+            t.data,
+            t.operation,
+            t.safeTxGas,
+            t.baseGas,
+            t.gasPrice,
+            t.gasToken,
+            t.refundReceiver,
+            t.nonce
+        );
+        assertEq(SafeTxHash.hash(block.chainid, address(safe), t), expected);
+        assertEq(
+            keccak256(
+                abi.encodePacked(
+                    hex"1901", SafeTxHash.domainSeparator(block.chainid, address(safe)), SafeTxHash.structHash(t)
+                )
+            ),
+            expected
+        );
+    }
+
     function test_oneCallIsSentDirectly() public {
         Plan memory p = _planned(1);
         (SafeTx memory t, bytes32 h) = script.safeTx(p, 7);
@@ -103,8 +127,8 @@ contract SafeTxTest is Test {
         assertEq(t.value, 0);
         bytes memory packed;
         for (uint256 i; i < p.calls.length; ++i) {
-            HomeCall memory c = p.calls[i];
-            packed = abi.encodePacked(packed, uint8(0), c.to, c.value, c.data.length, c.data);
+            Call memory c = p.calls[i];
+            packed = abi.encodePacked(packed, uint8(0), c.target, c.value, c.data.length, c.data);
         }
         assertEq(t.data, abi.encodeWithSignature("multiSend(bytes)", packed));
     }
