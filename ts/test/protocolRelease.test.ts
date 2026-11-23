@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { IConduitTransceiverAbi, ICrossecuteGuardAbi } from "@crossecute/protocol/abi";
 import { describe, expect, it } from "vitest";
 import * as sdk from "../src/index.js";
 import { PROTOCOL_VERSION } from "../src/signedAbi.js";
@@ -75,10 +76,12 @@ describe("protocol release pin", () => {
     expect((create.inputs[2] as any).components.map((c: any) => `${c.name}:${c.type}`)).toEqual(["chainKey:bytes32", "eid:uint32", "oft:address"]);
   });
 
-  it("exports the generated ABIs the builders read", () => {
+  it("exports the protocol ABIs the builders read", () => {
     for (const name of ["signedTransmitterAbi", "signedReceiverAbi", "transceiverExtensionAbi", "transceiverBaseAbi", "conduitTransceiverAbi", "crossecuteGuardAbi", "safeBatchExecutorAbi", "lzOftConduitFactoryAbi", "lzOftTransmitterAbi", "lzOftReceiverAbi"]) {
       expect(sdk).toHaveProperty(name);
     }
+    expect(sdk.conduitTransceiverAbi).toBe(IConduitTransceiverAbi);
+    expect(sdk.crossecuteGuardAbi).toBe(ICrossecuteGuardAbi);
     const names = (abi: readonly { type: string; name?: string }[]) => abi.filter((f) => f.type === "function").map((f) => f.name);
     expect(names(sdk.signedTransmitterAbi)).toEqual(expect.arrayContaining(["bootstrap", "registerRoot", "relayLeaf", "relayAuthority", "quoteAuthority", "isSigned", "sendMessage"]));
     expect(names(sdk.signedReceiverAbi)).toEqual(expect.arrayContaining(["graph", "selection", "submitMessage", "submitLeaf", "initializeSigned"]));
