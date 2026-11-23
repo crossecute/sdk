@@ -61,6 +61,8 @@ jobs:
 
       - run: pnpm run typecheck
 
+      - run: scripts/check-consumer.sh
+
       # prepack builds dist/ from this checkout.
       - run: npm stage publish . --access public --json > stage.json
 

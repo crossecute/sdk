@@ -49,6 +49,9 @@ jobs:
 
       - run: ${{ matrix.manager }} run build
 
+      - run: scripts/check-consumer.sh
+        if: matrix.manager == 'pnpm'
+
       - run: scripts/check-forge-attest.sh
         if: matrix.manager == 'pnpm'
 
