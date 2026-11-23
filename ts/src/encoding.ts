@@ -1,7 +1,8 @@
-import { type Address, type Hex, concat, encodeAbiParameters, keccak256, numberToHex } from "viem";
+import { TransmitterBaseAbi } from "@crossecute/protocol/abi";
+import { type Address, type ContractFunctionArgs, type Hex, concat, encodeAbiParameters, getAbiItem, keccak256, numberToHex } from "viem";
 
 /** One call in a payload: the ERC-7579 `Execution` tuple the protocol's `Call` uses. */
-export type Call = { target: Address; value: bigint; data: Hex };
+export type Call = ContractFunctionArgs<typeof TransmitterBaseAbi, "payable", "execute">[0][number];
 
 const VERSION_1 = "0x0001";
 const CT_EIP155 = "0x0000";
@@ -36,16 +37,7 @@ export function chainKey(chainId: bigint): Hex {
   return keccak256(encodeEvmChain(chainId));
 }
 
-const callsType = [
-  {
-    type: "tuple[]",
-    components: [
-      { name: "target", type: "address" },
-      { name: "value", type: "uint256" },
-      { name: "data", type: "bytes" },
-    ],
-  },
-] as const;
+const callsType = getAbiItem({ abi: TransmitterBaseAbi, name: "execute" }).inputs;
 
 /** `Payload.encodeCalls`: the wire bytes an EVM receiver decodes. */
 export function encodeCalls(calls: readonly Call[]): Hex {
