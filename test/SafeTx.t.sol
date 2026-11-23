@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
 import {CrossecuteScript} from "@crossecute/sdk/CrossecuteScript.sol";
 import {SafeTxHash} from "@crossecute/sdk/SafeTxHash.sol";
-import {HomeCall, Plan, SafeTx} from "@crossecute/sdk/Types.sol";
+import {Plan, SafeTx} from "@crossecute/sdk/Types.sol";
 import {Harness} from "./CrossecuteScript.t.sol";
 import {MockTransceiver, MockTransmitter, MockRegistry, MockSafe, Counter} from "./MockConduit.sol";
 
@@ -103,8 +103,8 @@ contract SafeTxTest is Test {
         assertEq(t.value, 0);
         bytes memory packed;
         for (uint256 i; i < p.calls.length; ++i) {
-            HomeCall memory c = p.calls[i];
-            packed = abi.encodePacked(packed, uint8(0), c.to, c.value, c.data.length, c.data);
+            Call memory c = p.calls[i];
+            packed = abi.encodePacked(packed, uint8(0), c.target, c.value, c.data.length, c.data);
         }
         assertEq(t.data, abi.encodeWithSignature("multiSend(bytes)", packed));
     }

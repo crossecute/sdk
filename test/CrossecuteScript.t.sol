@@ -183,7 +183,7 @@ contract CrossecuteScriptTest is Test {
         vm.deal(OWNER, p.calls[0].value);
         for (uint256 i; i < p.calls.length; ++i) {
             vm.prank(OWNER);
-            (bool ok,) = p.calls[i].to.call{value: p.calls[i].value}(p.calls[i].data);
+            (bool ok,) = p.calls[i].target.call{value: p.calls[i].value}(p.calls[i].data);
             assertTrue(ok);
         }
         assertEq(transmitter.FEE_SINK().balance, p.fee);
@@ -242,6 +242,7 @@ contract CrossecuteScriptTest is Test {
         string memory json = vm.readFile(path);
         assertEq(vm.parseJsonString(json, ".version"), "crossecute-plan/1");
         assertEq(vm.parseJsonUint(json, ".fee"), p.fee);
+        assertEq(vm.parseJsonAddress(json, ".calls[0].to"), address(transmitter));
         assertEq(vm.parseJsonBytes(json, ".calls[0].data"), p.calls[0].data);
         assertEq(vm.parseJsonUint(json, ".batches[0].chainId"), DEST);
         assertEq(vm.parseJsonAddress(json, ".batches[0].receiver"), RECEIVER);

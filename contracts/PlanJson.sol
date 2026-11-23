@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Call} from "@crossecute/protocol/messaging/Call.sol";
-import {HomeCall, Batch, Plan, SafeTx} from "./Types.sol";
+import {Batch, Plan, SafeTx} from "./Types.sol";
 
 /// @title PlanJson
 /// @notice The two files a plan is written as. Integers are decimal strings so no reader
@@ -98,14 +98,14 @@ library PlanJson {
     }
 
     /// @param builder Adds the Transaction Builder's `operation` field.
-    function _homeCalls(HomeCall[] memory calls, bool builder) private pure returns (string memory json) {
+    function _homeCalls(Call[] memory calls, bool builder) private pure returns (string memory json) {
         json = "[";
         for (uint256 i; i < calls.length; ++i) {
             json = string.concat(
                 json,
                 i == 0 ? "" : ",",
                 '{"to":"',
-                vm.toString(calls[i].to),
+                vm.toString(calls[i].target),
                 '","value":"',
                 vm.toString(calls[i].value),
                 '","data":"',

@@ -12,7 +12,7 @@ import {IConduitTransceiver} from "@crossecute/protocol/messaging/outbound/Trans
 import {OwnableTransmitter} from "@crossecute/protocol/messaging/outbound/OwnableTransmitter.sol";
 import {TransceiverExtension} from "@crossecute/protocol/messaging/transceiver/TransceiverExtension.sol";
 import {ChainRegistry} from "@crossecute/protocol/registry/ChainRegistry.sol";
-import {HomeCall, Batch, Plan, SafeTx} from "./Types.sol";
+import {Batch, Plan, SafeTx} from "./Types.sol";
 import {PlanJson} from "./PlanJson.sol";
 import {ISafe} from "./ISafe.sol";
 import {SafeTxHash} from "./SafeTxHash.sol";
@@ -236,7 +236,7 @@ abstract contract CrossecuteScript is Script {
         plan.transmitter = address(transmitter);
         plan.owner = transmitter.owner();
         plan.batches = _batches;
-        plan.calls = new HomeCall[](_batches.length);
+        plan.calls = new Call[](_batches.length);
 
         // Quotes in order, each after the calls before it, since a bootstrap changes what follows.
         uint256 snapshot = vm.snapshotState();
@@ -264,9 +264,9 @@ abstract contract CrossecuteScript is Script {
         vm.revertToStateAndDelete(snapshot);
     }
 
-    function _homeCallFor(Batch memory b) private view returns (HomeCall memory call, uint256 fee) {
+    function _homeCallFor(Batch memory b) private view returns (Call memory call, uint256 fee) {
         bytes memory body = Payload.encodeCalls(b.calls);
-        call.to = address(transmitter);
+        call.target = address(transmitter);
         if (transmitter.isBootstrapped(ChainKey.forEvm(b.chainId))) {
             bytes memory recipient = transmitter.recipientOn(b.chainId);
             call.data = abi.encodeCall(transmitter.sendMessage, (recipient, body, b.attributes));
@@ -278,9 +278,9 @@ abstract contract CrossecuteScript is Script {
         }
     }
 
-    function _runAsOwner(address owner, HomeCall memory call, uint256 index) private {
+    function _runAsOwner(address owner, Call memory call, uint256 index) private {
         vm.prank(owner);
-        (bool ok, bytes memory reason) = call.to.call{value: call.value}(call.data);
+        (bool ok, bytes memory reason) = call.target.call{value: call.value}(call.data);
         if (!ok) revert HomeCallReverted(index, reason);
     }
 
@@ -317,7 +317,7 @@ abstract contract CrossecuteScript is Script {
 
         t.nonce = nonce;
         if (plan.calls.length == 1) {
-            t.to = plan.calls[0].to;
+            t.to = plan.calls[0].target;
             t.value = plan.calls[0].value;
             t.data = plan.calls[0].data;
         } else {
@@ -385,10 +385,10 @@ abstract contract CrossecuteScript is Script {
     }
 
     /// @dev MultiSend's packed transactions: operation, to, value, data length, data.
-    function _multiSendPacked(HomeCall[] memory calls) private pure returns (bytes memory packed) {
+    function _multiSendPacked(Call[] memory calls) private pure returns (bytes memory packed) {
         for (uint256 i; i < calls.length; ++i) {
-            packed =
-                abi.encodePacked(packed, uint8(0), calls[i].to, calls[i].value, calls[i].data.length, calls[i].data);
+            Call memory call = calls[i];
+            packed = abi.encodePacked(packed, uint8(0), call.target, call.value, call.data.length, call.data);
         }
     }
 
@@ -398,7 +398,7 @@ abstract contract CrossecuteScript is Script {
         if (plan.owner.code.length != 0) revert OwnerIsContract(plan.owner);
         vm.startBroadcast(plan.owner);
         for (uint256 i; i < plan.calls.length; ++i) {
-            (bool ok, bytes memory reason) = plan.calls[i].to.call{value: plan.calls[i].value}(plan.calls[i].data);
+            (bool ok, bytes memory reason) = plan.calls[i].target.call{value: plan.calls[i].value}(plan.calls[i].data);
             if (!ok) revert HomeCallReverted(i, reason);
         }
         vm.stopBroadcast();
