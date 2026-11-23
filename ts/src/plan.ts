@@ -28,7 +28,7 @@ export type Plan = {
   batches: Batch[];
 };
 
-/** Parses and type-checks a plan file. Does not check that its calls match its batches; see `checkPlan`. */
+/** Parses and type-checks a plan file. Does not check that its calls match its batches; see `requirePlan`. */
 export function parsePlan(json: string): Plan {
   const raw = JSON.parse(json);
   if (raw.version !== PLAN_VERSION) throw new Error(`unsupported plan version ${raw.version}`);
@@ -61,7 +61,7 @@ export function parsePlan(json: string): Plan {
 }
 
 /** The transmitter calldata that carries `batch`, as `CrossecuteScript._homeCallFor` builds it. */
-export function homeCallData(batch: Batch): Hex {
+export function homeCalldata(batch: Batch): Hex {
   const body = encodeCalls(batch.calls);
   if (batch.bootstrap) {
     return encodeFunctionData({
@@ -82,13 +82,13 @@ export function homeCallData(batch: Batch): Hex {
  * after simulation cannot carry calldata other than what was simulated. Only the first call
  * may carry value: the transmitter top-up.
  */
-export function checkPlan(plan: Plan): void {
+export function requirePlan(plan: Plan): void {
   if (plan.calls.length === 0) throw new Error("plan has no calls");
   if (plan.calls.length !== plan.batches.length) throw new Error("plan has a different number of calls and batches");
   plan.calls.forEach((call, i) => {
     if (call.to !== plan.transmitter) throw new Error(`calls[${i}] is not to the transmitter`);
     if (i > 0 && call.value !== 0n) throw new Error(`calls[${i}] carries value`);
-    if (call.data.toLowerCase() !== homeCallData(plan.batches[i]).toLowerCase()) {
+    if (call.data.toLowerCase() !== homeCalldata(plan.batches[i]).toLowerCase()) {
       throw new Error(`calls[${i}] does not carry batches[${i}]`);
     }
   });

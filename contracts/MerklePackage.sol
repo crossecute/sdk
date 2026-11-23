@@ -45,7 +45,7 @@ library MerklePackages {
     ///         different batches at one receiver nonce, a nonce below the observed `nextNonce`, or
     ///         receiver nonces that are missing, repeated or unused. The same batch at one nonce with
     ///         different attributes is allowed, since the receiver records it by execution ID.
-    function check(ExecutionLeaf[] memory leaves, ReceiverNonce[] memory receiverNonces) internal pure {
+    function requireMerklePlan(ExecutionLeaf[] memory leaves, ReceiverNonce[] memory receiverNonces) internal pure {
         _leafHashes(leaves, receiverNonces);
     }
 
@@ -71,17 +71,17 @@ library MerklePackages {
     }
 
     /// @notice `publishLeaves` calldata for the guard, carrying the encoded leaves in package order.
-    function publishData(MerklePackage memory pkg) internal pure returns (bytes memory) {
+    function publishLeavesCalldata(MerklePackage memory pkg) internal pure returns (bytes memory) {
         bytes[] memory encoded = new bytes[](pkg.leaves.length);
         for (uint256 i; i < encoded.length; ++i) {
             encoded[i] = SignedDispatch.encodeLeaf(pkg.leaves[i].leaf);
         }
-        return SignedDispatch.publishData(encoded);
+        return SignedDispatch.publishLeavesCalldata(encoded);
     }
 
     /// @notice `registerRoot` calldata for the owner Safe's signed transaction.
-    function registerData(MerklePackage memory pkg) internal pure returns (bytes memory) {
-        return SignedDispatch.registerData(pkg.root);
+    function registerRootCalldata(MerklePackage memory pkg) internal pure returns (bytes memory) {
+        return SignedDispatch.registerRootCalldata(pkg.root);
     }
 
     function _leafHashes(ExecutionLeaf[] memory leaves, ReceiverNonce[] memory receiverNonces)

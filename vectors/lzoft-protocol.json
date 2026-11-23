@@ -1,5 +1,5 @@
 {
-  "revision": "b647dd8d6a6363d3ebe147265d020baeb93ca3c7",
+  "revision": "554a0dd0b1a419479e587e19a5ebe5b2376e4350",
   "optionsAttribute": {
     "source": "contracts/evm/src/protocols/layerzero/LzMessage.sol",
     "string": "crossecute.lz.options",

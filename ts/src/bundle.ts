@@ -1,11 +1,11 @@
 import { type Address, type Hex, decodeFunctionData } from "viem";
 import { type SafeTxEnvelope, parseSafeTxFields, safeTxFieldNames, safeTxHashes, serializeSafeTxFields } from "./safeTx.js";
 import {
-  type NestedSafeApproval, type SafeTxEvidence, type SignedSafeTx, checkSignedDispatchRange, registerRootData, relayLeafData, signedSendData,
-  submitLeafData, submitMessageData,
+  type NestedSafeApproval, type SafeTxEvidence, type SignedSafeTx, requireSignedDispatchRange, registerRootCalldata, relayLeafCalldata, sendMessageCalldataSigned,
+  submitLeafCalldata, submitMessageCalldata,
 } from "./signed.js";
 import { signedTransmitterAbi } from "./signedAbi.js";
-import { type MerklePackage, merklePackageFromJSON, merklePackageToJSON, verifyMerklePackage } from "./merkle.js";
+import { type MerklePackage, merklePackageFromJsonObject, merklePackageToJsonObject, requireMerklePackage } from "./merkle.js";
 import { address, array, bytesHex, object, uint, word } from "./json.js";
 
 /** Version of the exported delivery bundle layout. */
@@ -33,8 +33,8 @@ export function buildDeliveryBundle(input: {
   merkle?: MerklePackage;
 }): DeliveryBundle {
   const { envelope, signatures, nestedApprovals = [], merkle } = input;
-  checkSignedDispatchRange(envelope.chainId, envelope.tx.nonce, envelope.tx.value);
-  const bundle = deliveryBundleFromJSON(deliveryBundleToJSON({
+  requireSignedDispatchRange(envelope.chainId, envelope.tx.nonce, envelope.tx.value);
+  const bundle = deliveryBundleFromJsonObject(deliveryBundleToJsonObject({
     version: DELIVERY_BUNDLE_VERSION,
     safe: envelope.safe,
     homeChainId: envelope.chainId,
@@ -42,7 +42,7 @@ export function buildDeliveryBundle(input: {
     evidence: { signedSafeTx: { safeTx: envelope.tx, signatures }, nestedApprovals },
     ...(merkle && { merkle }),
   }));
-  verifyDeliveryBundle(bundle);
+  requireDeliveryBundle(bundle);
   return bundle;
 }
 
@@ -52,18 +52,18 @@ export function buildDeliveryBundle(input: {
  * the package's tree, and unique nested approvals. It does not verify signatures, thresholds or
  * nested approval contents; the receiver does.
  */
-export function verifyDeliveryBundle(bundle: DeliveryBundle): void {
+export function requireDeliveryBundle(bundle: DeliveryBundle): void {
   if (bundle.version !== DELIVERY_BUNDLE_VERSION) throw new Error(`unsupported delivery bundle version ${bundle.version}`);
   const { safeTx } = bundle.evidence.signedSafeTx;
-  checkSignedDispatchRange(bundle.homeChainId, safeTx.nonce, safeTx.value);
+  requireSignedDispatchRange(bundle.homeChainId, safeTx.nonce, safeTx.value);
   const envelope: SafeTxEnvelope = { chainId: bundle.homeChainId, safe: bundle.safe, tx: safeTx };
   if (safeTxHashes(envelope).safeTxHash.toLowerCase() !== bundle.safeTxHash.toLowerCase()) throw new Error("safeTxHash mismatch");
   if (safeTx.operation !== 0) throw new Error("signed dispatch must be a CALL");
 
   const data = safeTx.data.toLowerCase();
   if (bundle.merkle) {
-    verifyMerklePackage(bundle.merkle);
-    if (data !== registerRootData(bundle.merkle.root)) throw new Error("transaction is not registerRoot of the package root");
+    requireMerklePackage(bundle.merkle);
+    if (data !== registerRootCalldata(bundle.merkle.root)) throw new Error("transaction is not registerRoot of the package root");
   } else {
     let decoded;
     try {
@@ -73,7 +73,7 @@ export function verifyDeliveryBundle(bundle: DeliveryBundle): void {
     }
     if (decoded.functionName !== "sendMessage") throw new Error("transaction is not a signed sendMessage");
     const [destination, calls, attributes] = decoded.args;
-    if (data !== signedSendData(destination, calls, attributes)) throw new Error("transaction is not a signed sendMessage");
+    if (data !== sendMessageCalldataSigned(destination, calls, attributes)) throw new Error("transaction is not a signed sendMessage");
   }
 
   const seen = new Set<string>();
@@ -93,19 +93,19 @@ function leafEntry(bundle: DeliveryBundle, index: number) {
 /** `relayLeaf` calldata for a transmitter on the source chain. */
 export function relayLeafFromBundle(bundle: DeliveryBundle, index: number): Hex {
   const { leaf, proof } = leafEntry(bundle, index);
-  return relayLeafData(bundle.evidence, leaf, proof);
+  return relayLeafCalldata(bundle.evidence, leaf, proof);
 }
 
 /** `submitLeaf` calldata for the destination receiver, with no provider involved. */
 export function submitLeafFromBundle(bundle: DeliveryBundle, index: number): Hex {
   const { leaf, proof } = leafEntry(bundle, index);
-  return submitLeafData(bundle.evidence, leaf, proof);
+  return submitLeafCalldata(bundle.evidence, leaf, proof);
 }
 
 /** `submitMessage` calldata for a standalone bundle. */
 export function submitMessageFromBundle(bundle: DeliveryBundle): Hex {
   if (bundle.merkle) throw new Error("not a standalone bundle");
-  return submitMessageData(bundle.evidence);
+  return submitMessageCalldata(bundle.evidence);
 }
 
 const signedTxToJSON = ({ safeTx, signatures }: SignedSafeTx) => ({ safeTx: serializeSafeTxFields(safeTx), signatures });
@@ -114,7 +114,7 @@ const signedTxFromJSON = (raw: unknown, at: string): SignedSafeTx => {
   return { safeTx: parseSafeTxFields(object(o.safeTx, safeTxFieldNames, `${at}.safeTx`)), signatures: bytesHex(o.signatures, `${at}.signatures`) };
 };
 
-export function deliveryBundleToJSON(bundle: DeliveryBundle): unknown {
+export function deliveryBundleToJsonObject(bundle: DeliveryBundle): unknown {
   return {
     version: bundle.version,
     safe: bundle.safe,
@@ -122,12 +122,12 @@ export function deliveryBundleToJSON(bundle: DeliveryBundle): unknown {
     safeTxHash: bundle.safeTxHash,
     signedSafeTx: signedTxToJSON(bundle.evidence.signedSafeTx),
     nestedApprovals: bundle.evidence.nestedApprovals.map((n) => ({ childSafe: n.childSafe, messageHash: n.messageHash, approval: signedTxToJSON(n.approval) })),
-    merkle: bundle.merkle ? merklePackageToJSON(bundle.merkle) : null,
+    merkle: bundle.merkle ? merklePackageToJsonObject(bundle.merkle) : null,
   };
 }
 
-/** Reads the JSON layout strictly. The result is not verified; call `verifyDeliveryBundle`. */
-export function deliveryBundleFromJSON(raw: unknown): DeliveryBundle {
+/** Reads the JSON layout strictly. The result is not verified; call `requireDeliveryBundle`. */
+export function deliveryBundleFromJsonObject(raw: unknown): DeliveryBundle {
   const o = object(raw, ["version", "safe", "homeChainId", "safeTxHash", "signedSafeTx", "nestedApprovals", "merkle"], "bundle");
   if (o.version !== DELIVERY_BUNDLE_VERSION) throw new Error("bundle.version: unsupported delivery bundle version");
   return {
@@ -142,18 +142,18 @@ export function deliveryBundleFromJSON(raw: unknown): DeliveryBundle {
         return { childSafe: address(n.childSafe, "childSafe"), messageHash: word(n.messageHash, "messageHash"), approval: signedTxFromJSON(n.approval, `bundle.nestedApprovals[${i}].approval`) };
       }),
     },
-    ...(o.merkle !== null && { merkle: merklePackageFromJSON(o.merkle) }),
+    ...(o.merkle !== null && { merkle: merklePackageFromJsonObject(o.merkle) }),
   };
 }
 
 export function serializeDeliveryBundle(bundle: DeliveryBundle): string {
-  verifyDeliveryBundle(bundle);
-  return JSON.stringify(deliveryBundleToJSON(bundle), null, 2) + "\n";
+  requireDeliveryBundle(bundle);
+  return JSON.stringify(deliveryBundleToJsonObject(bundle), null, 2) + "\n";
 }
 
-/** Strictly parses the JSON layout, then runs `verifyDeliveryBundle`. */
+/** Strictly parses the JSON layout, then runs `requireDeliveryBundle`. */
 export function parseDeliveryBundle(json: string): DeliveryBundle {
-  const bundle = deliveryBundleFromJSON(JSON.parse(json));
-  verifyDeliveryBundle(bundle);
+  const bundle = deliveryBundleFromJsonObject(JSON.parse(json));
+  requireDeliveryBundle(bundle);
   return bundle;
 }

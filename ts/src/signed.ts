@@ -122,7 +122,7 @@ export function authorityGraphHash(sourceChainId: bigint, graph: AuthorityGraph)
  * consistent, and nodes are the first-visit depth-first traversal from the root with no cycle, duplicate or
  * unreachable node. Positions are not checked against any guard.
  */
-export function validateAuthorityGraph(graph: AuthorityGraph, root: Address): void {
+export function requireAuthorityGraph(graph: AuthorityGraph, root: Address): void {
   const { nodes } = graph;
   if (!nodes.length || nodes[0].record.safe.toLowerCase() !== root.toLowerCase()) throw new Error("wrong authority root");
   if (nodes[0].position !== zeroHash) throw new Error("root position not zero");
@@ -173,47 +173,47 @@ export function encodeMerkleWire(evidence: SafeTxEvidence, leaf: ExecutionLeaf, 
  * receiver checks its shape. `owner` is the conduit's owner Safe and must be the graph's root, since the
  * receiver requires its root to be the owner.
  */
-export function encodeSignedBootstrap(body: SignedBootstrap, owner: Address): Hex {
+export function encodeBootstrapBodySigned(body: SignedBootstrap, owner: Address): Hex {
   if (body.updateHead === zeroHash) throw new Error("zero update head");
-  validateAuthorityGraph(body.authority, owner);
+  requireAuthorityGraph(body.authority, owner);
   return encodeAbiParameters(bootstrapType, [{ ...body, authority: encodeAuthorityGraph(body.authority) }]);
 }
 /** `bootstrap(payload, attributes)` for a signed transmitter, with `Payload.encodeBootstrap`'s payload. */
-export function signedBootstrapData(destinationChainIdentifier: Hex, body: SignedBootstrap, owner: Address, attributes: readonly Hex[]): Hex {
-  return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "bootstrap", args: [encodeBootstrap(destinationChainIdentifier, encodeSignedBootstrap(body, owner)), attributes] });
+export function bootstrapCalldataSigned(destinationChainIdentifier: Hex, body: SignedBootstrap, owner: Address, attributes: readonly Hex[]): Hex {
+  return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "bootstrap", args: [encodeBootstrap(destinationChainIdentifier, encodeBootstrapBodySigned(body, owner)), attributes] });
 }
-export function signedSendData(destination: Hex, calls: Hex, attributes: readonly Hex[]): Hex {
+export function sendMessageCalldataSigned(destination: Hex, calls: Hex, attributes: readonly Hex[]): Hex {
   if (calls === "0x") throw new Error("empty signed payload");
   return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "sendMessage", args: [destination, calls, attributes] });
 }
-export function registerRootData(root: Hex): Hex {
+export function registerRootCalldata(root: Hex): Hex {
   return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "registerRoot", args: [root] });
 }
-export function publishLeavesData(leaves: readonly Hex[]): Hex {
+export function publishLeavesCalldata(leaves: readonly Hex[]): Hex {
   if (!leaves.length) throw new Error("no leaves");
   return encodeFunctionData({ abi: crossecuteGuardAbi, functionName: "publishLeaves", args: [leaves] });
 }
-export function relayLeafData(evidence: SafeTxEvidence, leaf: ExecutionLeaf, proof: readonly Hex[]): Hex {
+export function relayLeafCalldata(evidence: SafeTxEvidence, leaf: ExecutionLeaf, proof: readonly Hex[]): Hex {
   return encodeFunctionData({ abi: signedTransmitterAbi, functionName: "relayLeaf", args: [evidence, leaf, proof] });
 }
-export function submitMessageData(evidence: SafeTxEvidence): Hex {
+export function submitMessageCalldata(evidence: SafeTxEvidence): Hex {
   return encodeFunctionData({ abi: signedReceiverAbi, functionName: "submitMessage", args: [evidence] });
 }
-export function submitLeafData(evidence: SafeTxEvidence, leaf: ExecutionLeaf, proof: readonly Hex[]): Hex {
+export function submitLeafCalldata(evidence: SafeTxEvidence, leaf: ExecutionLeaf, proof: readonly Hex[]): Hex {
   return encodeFunctionData({ abi: signedReceiverAbi, functionName: "submitLeaf", args: [evidence, leaf, proof] });
 }
 /** Source chain id, Safe nonce and value must fit the signed transaction's uint256 fields; the chain id is nonzero. */
-export function checkSignedDispatchRange(chainId: bigint, nonce: bigint, value: bigint): void {
+export function requireSignedDispatchRange(chainId: bigint, nonce: bigint, value: bigint): void {
   if (chainId <= 0n || chainId >= 2n ** 256n) throw new Error("invalid source chain id");
   if (nonce < 0n || nonce >= 2n ** 256n || value < 0n || value >= 2n ** 256n) throw new Error("invalid Safe nonce or value");
 }
 /** A separately signed CALL at its own Safe nonce. Never wrap signed sends in MultiSend. */
 export function signedDispatchTx(chainId: bigint, safe: Address, transmitter: Address, nonce: bigint, data: Hex, value = 0n): SafeTxEnvelope {
-  checkSignedDispatchRange(chainId, nonce, value);
+  requireSignedDispatchRange(chainId, nonce, value);
   return { chainId, safe, tx: { to: transmitter, value, data, nonce, operation: 0, safeTxGas: 0n, baseGas: 0n, gasPrice: 0n, gasToken: zeroAddress, refundReceiver: zeroAddress } };
 }
 /** Atomic source submission of separately signed Safe transactions, in consecutive nonce order per Safe. */
-export function safeBatchData(executions: readonly { envelope: SafeTxEnvelope; signatures: Hex }[]): Hex {
+export function safeBatchCalldata(executions: readonly { envelope: SafeTxEnvelope; signatures: Hex }[]): Hex {
   if (!executions.length) throw new Error("no executions");
   const next = new Map<string, bigint>();
   const chain = executions[0].envelope.chainId;

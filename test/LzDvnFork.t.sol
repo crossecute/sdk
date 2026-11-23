@@ -34,21 +34,21 @@ contract LzDvnForkTest is Test {
 
     function test_fraxtalsDefaultRequiresTheDeadDvn() public {
         _fork();
-        (bool dead, uint32 eid) = LzDvn.requiresDeadDvn(address(transceiver), address(conduit), FRAXTAL);
+        (bool dead, uint32 eid) = LzDvn.isDeadDvnRequired(address(transceiver), address(conduit), FRAXTAL);
         assertTrue(dead);
         assertEq(eid, 30255);
     }
 
     function test_theTransceiversDefaultToFraxtalRequiresItToo() public {
         _fork();
-        (bool dead, uint32 eid) = LzDvn.requiresDeadDvn(address(transceiver), address(transceiver), FRAXTAL);
+        (bool dead, uint32 eid) = LzDvn.isDeadDvnRequired(address(transceiver), address(transceiver), FRAXTAL);
         assertTrue(dead);
         assertEq(eid, 30255);
     }
 
     function test_arbitrumsDefaultDoesNot() public {
         _fork();
-        (bool dead,) = LzDvn.requiresDeadDvn(address(transceiver), address(conduit), ARBITRUM);
+        (bool dead,) = LzDvn.isDeadDvnRequired(address(transceiver), address(conduit), ARBITRUM);
         assertFalse(dead);
     }
 }

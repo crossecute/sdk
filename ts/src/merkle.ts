@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 import {
-  type ExecutionLeaf, dispatchLeafHash, dispatchTreeFromHashes, encodeExecutionLeaf, executionId, publishLeavesData,
+  type ExecutionLeaf, dispatchLeafHash, dispatchTreeFromHashes, encodeExecutionLeaf, executionId, publishLeavesCalldata,
 } from "./signed.js";
 import { array, bytesHex, object, uint, word } from "./json.js";
 
@@ -27,7 +27,7 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
  * that are missing, repeated or unused. The same batch at one nonce with different attributes is
  * allowed, since the receiver records it by execution ID.
  */
-export function checkMerklePlan(leaves: readonly ExecutionLeaf[], receiverNonces: readonly ReceiverNonce[]): void {
+export function requireMerklePlan(leaves: readonly ExecutionLeaf[], receiverNonces: readonly ReceiverNonce[]): void {
   planHashes(leaves, receiverNonces);
 }
 
@@ -74,11 +74,11 @@ function assemble(leaves: readonly ExecutionLeaf[], receiverNonces: readonly Rec
  * Hex fields come back lowercase, as `parseMerklePackage` reads them.
  */
 export function buildMerklePackage(leaves: readonly ExecutionLeaf[], receiverNonces: readonly ReceiverNonce[]): MerklePackage {
-  return merklePackageFromJSON(merklePackageToJSON(assemble(leaves, receiverNonces)));
+  return merklePackageFromJsonObject(merklePackageToJsonObject(assemble(leaves, receiverNonces)));
 }
 
 /** Rebuilds the package from its leaves and throws unless every recorded root, hash and proof matches. */
-export function verifyMerklePackage(pkg: MerklePackage): void {
+export function requireMerklePackage(pkg: MerklePackage): void {
   if (pkg.version !== MERKLE_PACKAGE_VERSION) throw new Error(`unsupported Merkle package version ${pkg.version}`);
   const rebuilt = assemble(pkg.leaves.map(({ leaf }) => leaf), pkg.receiverNonces);
   if (!same(pkg.root, rebuilt.root)) throw new Error("root mismatch");
@@ -92,8 +92,8 @@ export function verifyMerklePackage(pkg: MerklePackage): void {
 }
 
 /** Calldata for the guard's permissionless `publishLeaves`, carrying the ordered encoded leaves. */
-export function merklePublishData(pkg: MerklePackage): Hex {
-  return publishLeavesData(pkg.leaves.map(({ leaf }) => encodeExecutionLeaf(leaf)));
+export function publishMerklePackageCalldata(pkg: MerklePackage): Hex {
+  return publishLeavesCalldata(pkg.leaves.map(({ leaf }) => encodeExecutionLeaf(leaf)));
 }
 
 type FieldType = "bytes" | "uint" | "bytes[]";
@@ -108,7 +108,7 @@ function fieldFromJSON(v: unknown, type: FieldType, at: string): unknown {
   return array(v, at).map((a, i) => bytesHex(a, `${at}[${i}]`));
 }
 
-export function merklePackageToJSON(pkg: MerklePackage): unknown {
+export function merklePackageToJsonObject(pkg: MerklePackage): unknown {
   return {
     version: pkg.version,
     root: pkg.root,
@@ -124,8 +124,8 @@ export function merklePackageToJSON(pkg: MerklePackage): unknown {
   };
 }
 
-/** Reads the JSON layout strictly. The result is not checked against its tree; call `verifyMerklePackage`. */
-export function merklePackageFromJSON(raw: unknown, at = "merkle"): MerklePackage {
+/** Reads the JSON layout strictly. The result is not checked against its tree; call `requireMerklePackage`. */
+export function merklePackageFromJsonObject(raw: unknown, at = "merkle"): MerklePackage {
   const o = object(raw, ["version", "root", "receiverNonces", "leaves"], at);
   if (o.version !== MERKLE_PACKAGE_VERSION) throw new Error(`${at}.version: unsupported Merkle package version`);
   return {
@@ -147,12 +147,12 @@ export function merklePackageFromJSON(raw: unknown, at = "merkle"): MerklePackag
 }
 
 export function serializeMerklePackage(pkg: MerklePackage): string {
-  verifyMerklePackage(pkg);
-  return JSON.stringify(merklePackageToJSON(pkg), null, 2) + "\n";
+  requireMerklePackage(pkg);
+  return JSON.stringify(merklePackageToJsonObject(pkg), null, 2) + "\n";
 }
 
 export function parseMerklePackage(json: string): MerklePackage {
-  const pkg = merklePackageFromJSON(JSON.parse(json));
-  verifyMerklePackage(pkg);
+  const pkg = merklePackageFromJsonObject(JSON.parse(json));
+  requireMerklePackage(pkg);
   return pkg;
 }

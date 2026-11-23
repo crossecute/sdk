@@ -81,7 +81,7 @@ library SignedDispatch {
         treeRoot = level[0];
     }
 
-    function sendData(bytes memory destination, bytes memory calls, bytes[] memory attributes)
+    function sendMessageCalldataSigned(bytes memory destination, bytes memory calls, bytes[] memory attributes)
         internal
         pure
         returns (bytes memory)
@@ -91,22 +91,22 @@ library SignedDispatch {
     }
 
     /// @notice `bootstrap` calldata for a signed transmitter: `Payload.encodeBootstrap`'s payload naming the
-    ///         destination chain, carrying `bootstrapBody`.
-    function bootstrapData(bytes memory destinationChainIdentifier, bytes memory body, bytes[] memory attributes)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    ///         destination chain, carrying `bootstrapBodySigned`.
+    function bootstrapCalldataSigned(
+        bytes memory destinationChainIdentifier,
+        bytes memory body,
+        bytes[] memory attributes
+    ) internal pure returns (bytes memory) {
         return abi.encodeCall(
             ISignedTransmitter.bootstrap, (Payload.encodeBootstrap(destinationChainIdentifier, body), attributes)
         );
     }
 
-    function registerData(bytes32 treeRoot) internal pure returns (bytes memory) {
+    function registerRootCalldata(bytes32 treeRoot) internal pure returns (bytes memory) {
         return abi.encodeCall(ISignedTransmitter.registerRoot, (treeRoot));
     }
 
-    function publishData(bytes[] memory leaves) internal pure returns (bytes memory) {
+    function publishLeavesCalldata(bytes[] memory leaves) internal pure returns (bytes memory) {
         if (leaves.length == 0) revert NoLeaves();
         return abi.encodeCall(ICrossecuteGuard.publishLeaves, (leaves));
     }
@@ -139,15 +139,16 @@ library SignedDispatch {
     /// @notice `abi.encode(SignedBootstrap)` for the guard's selected `updateHead` and graph, with
     ///         `setupCalls = abi.encode(Call[])`. The graph is not validated here: the transmitter checks
     ///         it against the guard and the receiver checks its shape.
-    function bootstrapBody(address guard, bytes32 updateHead, AuthorityGraph memory graph, bytes memory setupCalls)
-        internal
-        pure
-        returns (bytes memory)
-    {
+    function bootstrapBodySigned(
+        address guard,
+        bytes32 updateHead,
+        AuthorityGraph memory graph,
+        bytes memory setupCalls
+    ) internal pure returns (bytes memory) {
         return abi.encode(SignedBootstrap(guard, updateHead, abi.encode(graph), setupCalls));
     }
 
-    function relayData(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory siblings)
+    function relayLeafCalldata(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory siblings)
         internal
         pure
         returns (bytes memory)
@@ -155,11 +156,11 @@ library SignedDispatch {
         return abi.encodeCall(ISignedTransmitter.relayLeaf, (evidence, leaf, siblings));
     }
 
-    function submitData(SafeTxEvidence memory evidence) internal pure returns (bytes memory) {
+    function submitMessageCalldata(SafeTxEvidence memory evidence) internal pure returns (bytes memory) {
         return abi.encodeCall(ISignedReceiver.submitMessage, (evidence));
     }
 
-    function submitData(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory siblings)
+    function submitLeafCalldata(SafeTxEvidence memory evidence, ExecutionLeaf memory leaf, bytes32[] memory siblings)
         internal
         pure
         returns (bytes memory)

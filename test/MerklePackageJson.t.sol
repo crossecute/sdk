@@ -56,17 +56,17 @@ contract MerklePackageJsonTest is Test, MerkleFixtures {
     function test_publishAndRegisterData() public pure {
         ExecutionLeaf[] memory leaves = guardExecutionLeaves(3);
         MerklePackage memory pkg = MerklePackages.build(leaves, guardReceiverNonces());
-        assertEq(MerklePackages.publishData(pkg), SignedDispatch.publishData(encoded(leaves)));
-        assertEq(MerklePackages.registerData(pkg), SignedDispatch.registerData(pkg.root));
+        assertEq(MerklePackages.publishLeavesCalldata(pkg), SignedDispatch.publishLeavesCalldata(encoded(leaves)));
+        assertEq(MerklePackages.registerRootCalldata(pkg), SignedDispatch.registerRootCalldata(pkg.root));
     }
 
     function test_registerRootComposesIntoSafeTypedData() public pure {
         MerklePackage memory pkg = MerklePackages.build(guardExecutionLeaves(3), guardReceiverNonces());
         address transmitter = address(0xa11ce);
-        SafeTx memory t = SignedDispatch.transaction(transmitter, 5, MerklePackages.registerData(pkg), 0);
+        SafeTx memory t = SignedDispatch.transaction(transmitter, 5, MerklePackages.registerRootCalldata(pkg), 0);
         string memory typedData = PlanJson.safeTxTypedData(1, address(0x5afe), t);
         assertEq(t.operation, 0);
-        assertTrue(vm.contains(typedData, vm.toString(MerklePackages.registerData(pkg))));
+        assertTrue(vm.contains(typedData, vm.toString(MerklePackages.registerRootCalldata(pkg))));
         assertTrue(vm.contains(typedData, vm.toString(transmitter)));
     }
 

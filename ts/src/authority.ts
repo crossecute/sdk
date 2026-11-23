@@ -3,10 +3,10 @@ import {
   encodeFunctionData, isAddressEqual, keccak256, parseAbi, sliceHex, size, toFunctionSelector, zeroHash,
 } from "viem";
 import { type Call, encodeEvm } from "./encoding.js";
-import { type SafeTxEnvelope, multiSendData, safeTxHashes } from "./safeTx.js";
+import { type SafeTxEnvelope, multiSendCalldata, safeTxHashes } from "./safeTx.js";
 import {
   type AuthorityGraph, type NestedSafeApproval, authorityGraphHash, authorityRecordHash, signedDispatchTx,
-  validateAuthorityGraph, safeMessageHash,
+  requireAuthorityGraph, safeMessageHash,
 } from "./signed.js";
 import { signedReceiverAbi, signedTransmitterAbi, sourceAuthorityGuardAbi } from "./signedAbi.js";
 
@@ -60,7 +60,7 @@ export type AuthorityProposal = {
 
 type AuthorityAction =
   | { kind: "activate" }
-  | { kind: "adopt" }
+  | { kind: "select" }
   | { kind: "ownership"; multiSend: Address; mutations: readonly Hex[] };
 
 export function buildAuthorityProposal({
@@ -76,7 +76,7 @@ export function buildAuthorityProposal({
   action: AuthorityAction;
   childUpdates?: readonly ChildUpdate[];
 }): AuthorityProposal {
-  validateAuthorityGraph(newGraph, safe);
+  requireAuthorityGraph(newGraph, safe);
   const newAuthorityHash = authorityGraphHash(chainId, newGraph);
   if (action.kind === "activate") {
     if (selection.authorityHash !== zeroHash || selection.updateHead !== zeroHash ||
@@ -84,12 +84,12 @@ export function buildAuthorityProposal({
     const data = encodeFunctionData({ abi: sourceAuthorityGuardAbi, functionName: "activate", args: [newAuthorityHash] });
     return { envelope: signedDispatchTx(chainId, safe, guard, nonce, data), guard, currentGraph, newGraph, childUpdates };
   }
-  validateAuthorityGraph(currentGraph, safe);
+  requireAuthorityGraph(currentGraph, safe);
   if (selection.updateHead === zeroHash || authorityGraphHash(chainId, currentGraph) !== selection.authorityHash) {
     throw new Error("authority witness does not match the source selection");
   }
   const update = { previousUpdateHash: selection.updateHead, newAuthorityHash };
-  if (action.kind === "adopt") {
+  if (action.kind === "select") {
     const data = encodeFunctionData({ abi: sourceAuthorityGuardAbi, functionName: "selectAuthority", args: [update] });
     return { envelope: signedDispatchTx(chainId, safe, guard, nonce, data), guard, currentGraph, newGraph, childUpdates };
   }
@@ -100,7 +100,7 @@ export function buildAuthorityProposal({
   const registration = encodeFunctionData({
     abi: sourceAuthorityGuardAbi, functionName: "registerOwnershipChange", args: [update],
   });
-  const data = multiSendData([
+  const data = multiSendCalldata([
     { to: guard, value: 0n, data: registration },
     ...mutations.map((mutation) => ({ to: safe, value: 0n, data: mutation })),
   ]);
@@ -262,7 +262,7 @@ export class AuthoritySource {
     const submission = decodeAuthoritySubmission(bytes);
     const actualHead = submissionHash(this.chainId, sourceSafe, submission.evidence.signedSafeTx.safeTx);
     if (actualHead !== updateHead) throw new Error(`authority submission has the wrong Safe transaction hash for ${updateHead}`);
-    validateAuthorityGraph(submission.newGraph, sourceSafe);
+    requireAuthorityGraph(submission.newGraph, sourceSafe);
     return {
       ...submission, bytes, updateHead, previousUpdateHash: predecessor(submission, this.guard),
       blockNumber: log.blockNumber, logIndex: log.logIndex,
@@ -292,7 +292,7 @@ export class AuthoritySource {
       if (decoded.functionName !== "stageUpdate") throw new Error("invalid activation staging call");
       graph = checkedGraph(decoded.args[2]);
     }
-    validateAuthorityGraph(graph, sourceSafe);
+    requireAuthorityGraph(graph, sourceSafe);
     if (authorityGraphHash(this.chainId, graph) !== selected.authorityHash) {
       throw new Error(`authority witness hash mismatch for ${sourceSafe} at ${selected.updateHead}`);
     }
@@ -407,12 +407,12 @@ export async function planChildUpdates(
   return result;
 }
 
-export function submitAuthorityData(update: PublishedAuthority): Hex {
+export function submitAuthorityCalldata(update: PublishedAuthority): Hex {
   const submit = signedReceiverAbi.find((entry) => entry.name === "submitAuthority")!;
   return concatHex([toFunctionSelector(submit), update.bytes]);
 }
 
-export function submitAuthorityBatchData(updates: readonly PublishedAuthority[]): Hex {
+export function submitAuthorityBatchCalldata(updates: readonly PublishedAuthority[]): Hex {
   if (!updates.length) throw new Error("no authority successors");
   for (let i = 1; i < updates.length; i++) {
     if (updates[i].previousUpdateHash !== updates[i - 1].updateHead) throw new Error("nonconsecutive authority successors");

@@ -62,7 +62,7 @@ contract SignedDispatchTest is Test {
         ExecutionLeaf memory leaf = execution();
         SafeTxEvidence memory e = fixture();
         bytes32[] memory proof = new bytes32[](0);
-        bytes memory body = SignedDispatch.bootstrapBody(GUARD, HEAD, graph(), emptySetup());
+        bytes memory body = SignedDispatch.bootstrapBodySigned(GUARD, HEAD, graph(), emptySetup());
         string memory key = "signed";
         vm.serializeBytes(key, "executionFields", SignedDispatch.encodeLeaf(leaf));
         vm.serializeBytes32(key, "executionHash", DispatchLeaves.hash(leaf));
@@ -70,15 +70,17 @@ contract SignedDispatchTest is Test {
         vm.serializeBytes(key, "authorityGraph", abi.encode(graph()));
         vm.serializeBytes(key, "bootstrapBody", body);
         vm.serializeBytes(
-            key, "bootstrapData", SignedDispatch.bootstrapData(BOOTSTRAP_DESTINATION, body, leaf.attributes)
+            key, "bootstrapData", SignedDispatch.bootstrapCalldataSigned(BOOTSTRAP_DESTINATION, body, leaf.attributes)
         );
-        vm.serializeBytes(key, "sendData", SignedDispatch.sendData(leaf.destination, leaf.calls, leaf.attributes));
+        vm.serializeBytes(
+            key, "sendData", SignedDispatch.sendMessageCalldataSigned(leaf.destination, leaf.calls, leaf.attributes)
+        );
         vm.serializeBytes(key, "standaloneWire", SignedDispatch.standaloneWire(e));
         vm.serializeBytes(key, "merkleWire", SignedDispatch.merkleWire(e, leaf, proof));
-        vm.serializeBytes(key, "registerData", SignedDispatch.registerData(DispatchLeaves.hash(leaf)));
-        vm.serializeBytes(key, "relayData", SignedDispatch.relayData(e, leaf, proof));
-        vm.serializeBytes(key, "submitMessageData", SignedDispatch.submitData(e));
-        vm.serializeBytes(key, "submitLeafData", SignedDispatch.submitData(e, leaf, proof));
+        vm.serializeBytes(key, "registerData", SignedDispatch.registerRootCalldata(DispatchLeaves.hash(leaf)));
+        vm.serializeBytes(key, "relayData", SignedDispatch.relayLeafCalldata(e, leaf, proof));
+        vm.serializeBytes(key, "submitMessageData", SignedDispatch.submitMessageCalldata(e));
+        vm.serializeBytes(key, "submitLeafData", SignedDispatch.submitLeafCalldata(e, leaf, proof));
         vm.serializeBytes32(key, "safeMessageHash", SafeHashes.messageHash(hex"abcdef", address(0x3333), 1));
         vm.serializeBytes32(key, "safeTxHash", SafeHashes.transactionHash(e.signedSafeTx.safeTx, address(0x7777), 1));
         bytes[] memory leaves = new bytes[](3);
@@ -86,7 +88,7 @@ contract SignedDispatchTest is Test {
         leaves[1] =
             SignedDispatch.encodeLeaf(ExecutionLeaf(leaf.destination, 8, 100, 200, hex"010203", leaf.attributes));
         leaves[2] = hex"aabbcc";
-        vm.serializeBytes(key, "publishData", SignedDispatch.publishData(leaves));
+        vm.serializeBytes(key, "publishData", SignedDispatch.publishLeavesCalldata(leaves));
         vm.serializeBytes32(key, "oddRoot", SignedDispatch.root(leaves));
         SafeBatchExecutor.SafeExecution[] memory entries = new SafeBatchExecutor.SafeExecution[](1);
         SafeTx memory t = e.signedSafeTx.safeTx;
@@ -146,7 +148,7 @@ contract SignedDispatchTest is Test {
             string memory key = keys[i];
             AuthorityGraph memory g = jsonGraph(json, key);
             assertEq(g.nodes[0].record.safe, vm.parseJsonAddress(json, string.concat(".", key, ".sourceSafe")), key);
-            bytes memory body = SignedDispatch.bootstrapBody(
+            bytes memory body = SignedDispatch.bootstrapBodySigned(
                 vm.parseJsonAddress(json, string.concat(".", key, ".guard")),
                 vm.parseJsonBytes32(json, string.concat(".", key, ".updateHead")),
                 g,
@@ -158,11 +160,11 @@ contract SignedDispatchTest is Test {
     }
 
     function test_bootstrapDataWrapsPayloadForDestination() public pure {
-        bytes memory body = SignedDispatch.bootstrapBody(GUARD, HEAD, graph(), emptySetup());
+        bytes memory body = SignedDispatch.bootstrapBodySigned(GUARD, HEAD, graph(), emptySetup());
         bytes[] memory attributes = new bytes[](1);
         attributes[0] = hex"aa";
         assertEq(
-            SignedDispatch.bootstrapData(BOOTSTRAP_DESTINATION, body, attributes),
+            SignedDispatch.bootstrapCalldataSigned(BOOTSTRAP_DESTINATION, body, attributes),
             abi.encodeCall(
                 ISignedTransmitter.bootstrap, (Payload.encodeBootstrap(BOOTSTRAP_DESTINATION, body), attributes)
             )

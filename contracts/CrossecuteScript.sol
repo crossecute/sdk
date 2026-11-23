@@ -189,7 +189,7 @@ abstract contract CrossecuteScript is Script {
     function _requireLiveDvn(uint256 chainId, bool bootstrap) private view {
         address transceiver = transmitter.transceiver();
         (bool dead, uint32 eid) =
-            LzDvn.requiresDeadDvn(transceiver, bootstrap ? transceiver : address(transmitter), chainId);
+            LzDvn.isDeadDvnRequired(transceiver, bootstrap ? transceiver : address(transmitter), chainId);
         if (!dead) return;
         if (bootstrap) {
             console2.log("LayerZero eid %s requires the dead DVN on the transceiver: governance must pin it", eid);

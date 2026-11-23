@@ -1,5 +1,5 @@
 import { type Address, type Hex, concat, encodeFunctionData, getAddress, hashDomain, hashStruct, hashTypedData, numberToHex, padHex } from "viem";
-import { type Plan, checkPlan } from "./plan.js";
+import { type Plan, requirePlan } from "./plan.js";
 import { bytesHex, uint } from "./json.js";
 
 /** Safe's EIP-712 `SafeTx`. */
@@ -115,7 +115,7 @@ export function safeTxHashes({ chainId, safe, tx }: SafeTxEnvelope): { domainHas
 }
 
 /** `CrossecuteScript._multiSendPacked` followed by the `multiSend` call. */
-export function multiSendData(calls: readonly { to: Address; value: bigint; data: Hex }[]): Hex {
+export function multiSendCalldata(calls: readonly { to: Address; value: bigint; data: Hex }[]): Hex {
   const packed = concat(
     calls.flatMap((c) => [
       "0x00",
@@ -133,8 +133,8 @@ export function multiSendData(calls: readonly { to: Address; value: bigint; data
  * Safe's domain on the home chain, with no gas refund, and either the plan's one call directly
  * or all of them through a known MultiSendCallOnly.
  */
-export function checkSafeTx(plan: Plan, envelope: SafeTxEnvelope): void {
-  checkPlan(plan);
+export function requireSafeTx(plan: Plan, envelope: SafeTxEnvelope): void {
+  requirePlan(plan);
   const { tx } = envelope;
   if (envelope.chainId !== plan.homeChainId) throw new Error(`domain chain ${envelope.chainId} is not the plan's ${plan.homeChainId}`);
   if (envelope.safe !== plan.owner) throw new Error(`domain Safe ${envelope.safe} is not the plan's owner ${plan.owner}`);
@@ -151,7 +151,7 @@ export function checkSafeTx(plan: Plan, envelope: SafeTxEnvelope): void {
   const known = Object.values(multiSendCallOnly).some((d) => d.addresses.includes(tx.to));
   if (tx.operation !== 1 || !known) throw new Error("the transaction does not delegatecall a known MultiSendCallOnly");
   if (tx.value !== 0n) throw new Error("the MultiSend call carries value");
-  if (tx.data !== multiSendData(plan.calls)) throw new Error("the MultiSend data is not the plan's calls");
+  if (tx.data !== multiSendCalldata(plan.calls)) throw new Error("the MultiSend data is not the plan's calls");
 }
 
 /** Forge Attest / cast wallet sign EIP-712 input, with uints serialized losslessly as decimals. */

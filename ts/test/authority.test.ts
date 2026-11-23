@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type AuthorityGraph, type AuthorityRelayPlan, type NestedSafeApproval, AuthoritySource, authorityExecution, authorityGraphHash, buildAuthorityProposal, buildAuthorityRelayBatch,
   buildAuthorityRelayProposal, encodeEvm, planAuthorityCatchUp, planAuthorityProposal, prepareAuthorityExecution, staleAuthorityChildren, safeMessageHash, safeTxHashes, scaffoldAuthorityRelay, scaffoldAuthorityRelayBatch,
-  signedDispatchTx, signedReceiverAbi, signedTransmitterAbi, sourceAuthorityGuardAbi, submitAuthorityBatchData,
+  signedDispatchTx, signedReceiverAbi, signedTransmitterAbi, sourceAuthorityGuardAbi, submitAuthorityBatchCalldata,
 } from "../src/index.js";
 
 const address = (n: number) => toHex(n, { size: 20 }) as Address;
@@ -43,7 +43,7 @@ function published(
   const draft = buildAuthorityProposal({
     ...base, safe: sourceSafe, nonce, currentGraph, newGraph: updated,
     selection: { updateHead, authorityHash: authorityGraphHash(chainId, currentGraph) },
-    action: { kind: "adopt" },
+    action: { kind: "select" },
   });
   const head = safeTxHashes(draft.envelope).safeTxHash;
   const votes = sign(head);
@@ -160,7 +160,7 @@ describe("authority updates", () => {
     expect(decodeFunctionData({ abi: signedTransmitterAbi, data: plan.envelope.tx.data })).toEqual({
       functionName: "relayAuthority", args: [recipient, first.bytes, []],
     });
-    expect(decodeFunctionData({ abi: signedReceiverAbi, data: submitAuthorityBatchData(plan.updates) }).args)
+    expect(decodeFunctionData({ abi: signedReceiverAbi, data: submitAuthorityBatchCalldata(plan.updates) }).args)
       .toEqual([[first.bytes, second.bytes]]);
     const scaffold = scaffoldAuthorityRelay(plan, {
       producerRepo: "https://github.com/example/ops", sourceRpcEnv: "SOURCE_RPC_URL",
@@ -208,7 +208,7 @@ describe("authority updates", () => {
     const source = new AuthoritySource({ readContract, getLogs, getTransaction: vi.fn() },
       chainId, guard, 10n, 0n);
     const proposal = await planAuthorityProposal(source, {
-      safe, nonce: 9n, newGraph: parentGraph(childUpdate.head), action: { kind: "adopt" },
+      safe, nonce: 9n, newGraph: parentGraph(childUpdate.head), action: { kind: "select" },
     });
     expect(proposal.childUpdates).toHaveLength(1);
     expect(proposal.childUpdates[0]).toMatchObject({ sourceSafe: child, newRecord: childBefore.nodes[0].record });
@@ -247,7 +247,7 @@ describe("authority updates", () => {
         args: { submission: submissions.get(args.updateHead) }, blockNumber: 4n, logIndex: 0,
       }]);
       const source = new AuthoritySource({ readContract, getLogs, getTransaction: vi.fn() }, chainId, guard, 10n, 0n);
-      return planAuthorityProposal(source, { safe, nonce: 9n, newGraph: parentAfter(update.head), action: { kind: "adopt" } });
+      return planAuthorityProposal(source, { safe, nonce: 9n, newGraph: parentAfter(update.head), action: { kind: "select" } });
     }
 
     it("proves a nested voter from inline signatures", async () => {

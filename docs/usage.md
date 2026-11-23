@@ -6,10 +6,10 @@ transaction planning, verification, and Safe-signed dispatch.
 ## Install
 
 ```bash
-pnpm add @crossecute/sdk @crossecute/protocol@0.2.0 viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
+pnpm add @crossecute/sdk @crossecute/protocol@0.3.0 viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
 ```
 
-With npm, use `npm install` with the same packages. The SDK is built against `@crossecute/protocol` 0.2.0, so install
+With npm, use `npm install` with the same packages. The SDK is built against `@crossecute/protocol` 0.3.0, so install
 that version and let both packages resolve one copy.
 
 Foundry remappings:
@@ -144,13 +144,13 @@ typed data the tests write, and checks the hash matches the SDK's.
 ## TypeScript
 
 ```ts
-import { parsePlan, checkPlan, parseSafeTxTypedData, checkSafeTx, safeTxHashes, encodeEvm, encodeCalls, chainKey } from "@crossecute/sdk";
+import { parsePlan, requirePlan, parseSafeTxTypedData, requireSafeTx, safeTxHashes, encodeEvm, encodeCalls, chainKey } from "@crossecute/sdk";
 ```
 
 `parsePlan` reads unsigned integers as decimal strings within `uint256` and normalizes
-complete hex bytes to lowercase. `checkPlan` re-derives each home call from its batch and
+complete hex bytes to lowercase. `requirePlan` re-derives each home call from its batch and
 throws if the calldata differs.
-`checkSafeTx` throws unless the typed data is the one Safe transaction that carries the plan:
+`requireSafeTx` throws unless the typed data is the one Safe transaction that carries the plan:
 the owner Safe's domain on the home chain, no gas refund, and the plan's call directly or all
 of its calls through a known MultiSendCallOnly.
 
@@ -186,7 +186,7 @@ first.
 
 ## Safe-signed dispatch
 
-The signed API is built against `@crossecute/protocol` 0.2.0. It includes `SafeTxEvidence { signedSafeTx,
+The signed API is built against `@crossecute/protocol` 0.3.0. It includes `SafeTxEvidence { signedSafeTx,
 nestedApprovals }`, `SignedSafeTx`, `NestedSafeApproval`, `AuthorityGraph`, execution leaves,
 `SignedBootstrap`, and the current transmitter, receiver (including nonce and authority views), transceiver,
 guard, and `SafeBatchExecutor` ABIs, trimmed to the functions and events the builders and this document use
@@ -227,7 +227,7 @@ successor at a time.
 Use `AuthoritySource` with a source RPC, guard address, pinned block, and earliest possible
 guard block. `planAuthorityProposal(source, input)` retrieves the selected graph, checks
 its hash against the guard, and resolves forward proofs for retained child Safes. The
-input names the Safe, nonce, new graph and action (`activate`, `ownership`, or `adopt`).
+input names the Safe, nonce, new graph and action (`activate`, `ownership`, or `select`).
 For ownership changes, supply the guard's pinned MultiSendCallOnly and the ordered Safe
 owner mutations. Activation starts with an empty current witness. Historical activation
 witnesses are recovered from the transaction input for the supported Multicall3 entry
@@ -244,7 +244,7 @@ witness and executes the Safe in one transaction. The Safe UI can collect signat
 Execution must use the staged call because the witness exists only inside that transaction.
 
 A parent Safe keeps each child at the position the parent selected. `staleAuthorityChildren`
-reports newer positions without modifying the parent's snapshot. Use an `adopt` proposal
+reports newer positions without modifying the parent's snapshot. Use a `select` proposal
 to advance the parent to the chosen child positions before dispatching under the new
 authority. A rejected or replaced source proposal does not revoke portable approvals.
 Portable approvals have no expiry. A receiver that still selects its predecessor can accept
@@ -259,7 +259,7 @@ publications back to the receiver's head. Use the returned envelope for the next
 the update on provider delivery. Use `authorityRelayDelivered` to check the expected
 receiver head and graph hash. Re-plan after delivery for each remaining update. A
 source relay receipt alone does not establish destination delivery. Direct submitters can
-encode an ordered, atomic destination batch with `submitAuthorityBatchData`. For independent
+encode an ordered, atomic destination batch with `submitAuthorityBatchCalldata`. For independent
 receivers, `scaffoldAuthorityRelayBatch` generates a single Safe proposal using a CALL to
 Multicall3 with one successor per receiver. The batch pins the exact native value of each
 call, and the generated script rejects relays that differ in source chain, Safe or nonce.
@@ -301,14 +301,14 @@ a later relay.
 
 ```ts
 import {
-  encodeEvm, encodeCalls, signedSendData, signedDispatchTx,
-  serializeSafeTxTypedData, submitMessageData, signedTransmitterAbi,
+  encodeEvm, encodeCalls, sendMessageCalldataSigned, signedDispatchTx,
+  serializeSafeTxTypedData, submitMessageCalldata, signedTransmitterAbi,
   type SafeTxEvidence,
 } from "@crossecute/sdk";
 
 // Discover and verify the conduit and receiver from deployed contracts first.
 // Use explicit provider gas attributes based on simulation of the complete entry point.
-const data = signedSendData(encodeEvm(destinationChainId, receiver), encodeCalls(calls), attributes);
+const data = sendMessageCalldataSigned(encodeEvm(destinationChainId, receiver), encodeCalls(calls), attributes);
 const envelope = signedDispatchTx(homeChainId, ownerSafe, transmitter, safeNonce, data);
 const typedDataFile = serializeSafeTxTypedData(envelope); // write for Forge Attest / cast
 // Collect owners' signatures externally over this exact transaction and source-chain domain.
@@ -318,9 +318,9 @@ const evidence: SafeTxEvidence = {
 };
 const fee = await client.readContract({
   address: transmitter, abi: signedTransmitterAbi,
-  functionName: "quoteSignedMessage", args: [evidence],
+  functionName: "quoteMessageSigned", args: [evidence],
 });
-const directCalldata = submitMessageData(evidence); // permissionless receiver submission
+const directCalldata = submitMessageCalldata(evidence); // permissionless receiver submission
 ```
 
 `encodeStandaloneWire` returns `abi.encode(1, evidence)`. Keep the signed transaction's
@@ -338,7 +338,7 @@ until its authority updates are submitted.
 
 Signed sends must be individual Safe **CALL** transactions with zero `safeTxGas` and
 `gasPrice`. Each has its own Safe nonce; do not use the plain planner's MultiSend transaction.
-`safeBatchData([{ envelope, signatures }, ...])` encodes atomic source submission through
+`safeBatchCalldata([{ envelope, signatures }, ...])` encodes atomic source submission through
 `SafeBatchExecutor`, checking source-chain consistency and consecutive nonces for each Safe.
 The first nonce must match the Safe's live nonce at execution. The executor supplies no ETH;
 fund the Safe/transmitter separately, or include the required transmitter top-up in the
@@ -348,16 +348,16 @@ Safe transaction's signed `value` before collecting signatures. Changing it requ
 
 ```ts
 import {
-  encodeExecutionLeaf, dispatchTree, publishLeavesData,
-  registerRootData, relayLeafData, submitLeafData,
+  encodeExecutionLeaf, dispatchTree, publishLeavesCalldata,
+  registerRootCalldata, relayLeafCalldata, submitLeafCalldata,
 } from "@crossecute/sdk";
 
 const published = executionLeaves.map(encodeExecutionLeaf);
 const tree = dispatchTree(published);
-const publishCalldata = publishLeavesData(published); // anyone calls the owner's guard
-const registrationCalldata = registerRootData(tree.root); // nonpayable; sign a separate Safe CALL
-const relayCalldata = relayLeafData(registrationEvidence, executionLeaves[0], tree.proofs[0]);
-const directCalldata = submitLeafData(registrationEvidence, executionLeaves[0], tree.proofs[0]);
+const publishCalldata = publishLeavesCalldata(published); // anyone calls the owner's guard
+const registrationCalldata = registerRootCalldata(tree.root); // nonpayable; sign a separate Safe CALL
+const relayCalldata = relayLeafCalldata(registrationEvidence, executionLeaves[0], tree.proofs[0]);
+const directCalldata = submitLeafCalldata(registrationEvidence, executionLeaves[0], tree.proofs[0]);
 ```
 
 Publication encodes a leaf's **fields**, not an offset-prefixed ABI tuple. Hashes are double
@@ -383,12 +383,12 @@ exact transport encodings, including nested approvals.
 
 ```ts
 import {
-  encodeCalls, encodeEvmChain, signedBootstrapData, authorityGraphHash,
+  encodeCalls, encodeEvmChain, bootstrapCalldataSigned, authorityGraphHash,
 } from "@crossecute/sdk";
 
 // selection is guard.selection(ownerSafe); authority is the graph that hashes to selection.authorityHash.
 if (authorityGraphHash(homeChainId, authority) !== selection.authorityHash) throw new Error("not the selected graph");
-const data = signedBootstrapData(
+const data = bootstrapCalldataSigned(
   encodeEvmChain(destinationChainId),
   { guard, updateHead: selection.updateHead, authority, setupCalls: encodeCalls(setupCalls) },
   ownerSafe,
@@ -403,13 +403,13 @@ abi.encode(graph), setupCalls)))`, and `setupCalls` is `abi.encode(Call[])`. Bot
 require `guard` to be the Safe's installed guard and the head and graph hash to equal its
 selection, and the Safe must have activated first. Price it with
 `signedTransmitterAbi.quoteBootstrap(payload, attributes)`, which validates the same body.
-`signedBootstrapData(destination, body, owner, attributes)` and `encodeSignedBootstrap(body, owner)`
-reject a zero head and run `validateAuthorityGraph(graph, owner)`, which checks what the receiver
+`bootstrapCalldataSigned(destination, body, owner, attributes)` and `encodeBootstrapBodySigned(body, owner)`
+reject a zero head and run `requireAuthorityGraph(graph, owner)`, which checks what the receiver
 checks of the body's shape: `owner` as the root at position zero (a graph canonical for another
 Safe is rejected), nonzero descendant positions, canonical depth-first order without cycles,
 duplicates or unreachable nodes, valid thresholds and owner kinds, and at most 16 owners per Safe.
 They cannot check the head, the graph hash or positions against the guard; compare
-`authorityGraphHash` with the guard's selection as above. The Foundry `SignedDispatch.bootstrapBody`
+`authorityGraphHash` with the guard's selection as above. The Foundry `SignedDispatch.bootstrapBodySigned`
 validates nothing. Signatures prove nothing about a carried graph, so the destination trusts the provider
 and the source transceiver for it. A failed source transport reverts the Safe's bootstrap
 execution and the Safe can sign another; a second delivery to an existing receiver reverts.
@@ -425,7 +425,7 @@ live provider cap, fee, simulation result, signature quorum or destination state
 
 `SignedDispatch` supplies the same field encodings, Merkle root and per-leaf proofs
 (`SignedDispatch.proof`), standalone/bootstrap/root calldata, wire bodies, relay and direct-submission calldata.
-`bootstrapBody(guard, updateHead, graph, setupCalls)` and `bootstrapData(destinationChainIdentifier, body,
+`bootstrapBodySigned(guard, updateHead, graph, setupCalls)` and `bootstrapCalldataSigned(destinationChainIdentifier, body,
 attributes)` build the bootstrap of the previous section without validating the graph. Import `ExecutionLeaf`,
 `SafeTxEvidence`, and `NestedSafeApproval` from
 `@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol` and `AuthorityGraph` from
@@ -453,13 +453,13 @@ and re-serializes it to the same bytes.
 
 `buildMerklePackage(leaves, receiverNonces)` produces the root, leaf hashes and proofs that the
 guard's `publishLeaves` records for the same ordered leaves, as a `MerklePackage` with
-`version: 1`. `merklePublishData(pkg)` is the `publishLeaves` calldata; each entry's `hash` is the
-indexed hash of its `LeafPublished` event, and `registerRootData(pkg.root)` is the owner Safe's
+`version: 1`. `publishMerklePackageCalldata(pkg)` is the `publishLeaves` calldata; each entry's `hash` is the
+indexed hash of its `LeafPublished` event, and `registerRootCalldata(pkg.root)` is the owner Safe's
 registration. A plan is rejected when it holds a duplicate leaf, two different batches at one
 receiver nonce (the receiver's conflicting-batch revert), a nonce below the receiver's observed
 `nextNonce`, or receiver nonces that are missing, repeated or unused. One batch at one nonce with
 different attributes is allowed, as the receiver records execution IDs without attributes.
-`verifyMerklePackage` rebuilds the tree from the leaves and checks every recorded root, hash and
+`requireMerklePackage` rebuilds the tree from the leaves and checks every recorded root, hash and
 proof; the leaf order is part of the package.
 
 A Foundry script drafts the same package by extending `MerklePackageScript`, which extends
@@ -475,7 +475,7 @@ _addLeaf(optimism, 0, deadline, calls, new bytes[](0));     // next free nonce, 
 MerklePackage memory pkg = _merklePackage();                // checks the plan, builds root, hashes, proofs
 _writeMerklePackage(pkg, "out/merkle.json");
 
-bytes memory data = MerklePackages.registerData(pkg);       // the owner Safe's signed CALL
+bytes memory data = MerklePackages.registerRootCalldata(pkg);       // the owner Safe's signed CALL
 SafeTx memory t = SignedDispatch.transaction(address(transmitter), safeNonce, data, 0);
 vm.writeFile("out/register-root.json", PlanJson.safeTxTypedData(block.chainid, transmitter.owner(), t));
 ```
@@ -492,7 +492,7 @@ For any other leaf, call `MerklePackages.build` with the leaves and observed rec
 `MerklePackages.build` applies the plan rules above and reverts with `DuplicateLeaf`,
 `ConflictingNonce`, `StaleNonce`, `MissingReceiverNonce`, `UnusedReceiverNonce` or
 `DuplicateReceiverNonce`. `MerklePackageJson.toJson` writes the TypeScript layout (decimal-string
-integers, lowercase hex, `version: 1`). `MerklePackages.publishData(pkg)` is the guard's
+integers, lowercase hex, `version: 1`). `MerklePackages.publishLeavesCalldata(pkg)` is the guard's
 `publishLeaves` calldata. As with `CrossecuteScript`, a receiver that is not yet deployed meets no code
 in simulation, so a callback into it that it would refuse succeeds there.
 
@@ -544,18 +544,18 @@ its own signing flow.
 The `layerzero-oft` binding sends every message through an OFT its own team operates, from the
 conduit itself, and a factory with no owner creates the conduit at home and its receiver on each
 destination. Its rules are protocol's
-[`docs/providers/layerzero-oft-spec.md`](https://github.com/crossecute/protocol/blob/npm-v0.2.0/docs/providers/layerzero-oft-spec.md)
+[`docs/providers/layerzero-oft-spec.md`](https://github.com/crossecute/protocol/blob/npm-v0.3.0/docs/providers/layerzero-oft-spec.md)
 (L1 to L5 and the OFT prerequisites O1 to O7). The signed entry points are the ones of the sections
-above and are unchanged: `signedSendData`, `registerRootData`, `relayLeafData`, `submitLeafData`,
-`submitMessageData`, `signedBootstrapData`, the Merkle package and the delivery bundle. The OFT
+above and are unchanged: `sendMessageCalldataSigned`, `registerRootCalldata`, `relayLeafCalldata`, `submitLeafCalldata`,
+`submitMessageCalldata`, `bootstrapCalldataSigned`, the Merkle package and the delivery bundle. The OFT
 transmitter implements the same signed bootstrap hooks as every signed transmitter, and the factory's
 `signedConduitBootstrap` builds the destination envelope on chain from the body
-`signedBootstrapData` encodes. What is OFT specific is the options attribute and conduit creation.
+`bootstrapCalldataSigned` encodes. What is OFT specific is the options attribute and conduit creation.
 
 ```ts
 import {
   chainKey, encodeCalls, encodeEvm, encodeEvmChain, lzOftCreateTx, lzOftLeaves, lzOftRoot, lzOptionsAttribute,
-  predictLzOftConduit, signedBootstrapData, signedSendData,
+  predictLzOftConduit, bootstrapCalldataSigned, sendMessageCalldataSigned,
 } from "@crossecute/sdk";
 
 // Peers of the home OFT, one per destination; the factory reads them, the SDK does not.
@@ -568,8 +568,8 @@ const conduit = predictLzOftConduit(factory, { owner: ownerSafe, salt, homeChain
 const creation = lzOftCreateTx(homeChainId, ownerSafe, factory, safeNonce, salt, homeOft, leaves); // Safe CALL
 
 const attributes = [lzOptionsAttribute(rawOptions)];
-const send = signedSendData(encodeEvm(destinationChainId, conduit), encodeCalls(calls), attributes);
-const bootstrap = signedBootstrapData(encodeEvmChain(destinationChainId), body, ownerSafe, attributes);
+const send = sendMessageCalldataSigned(encodeEvm(destinationChainId, conduit), encodeCalls(calls), attributes);
+const bootstrap = bootstrapCalldataSigned(encodeEvmChain(destinationChainId), body, ownerSafe, attributes);
 ```
 
 **The one attribute.** The conduit accepts only `abi.encodePacked(OPTIONS_ATTRIBUTE, rawOptions)` with
@@ -587,10 +587,10 @@ over the leaf hashes in the order given, and binds `keccak256(abi.encode(owner, 
 homeEid, homeOft, destRoot))` into the CREATE2 salt, so the address changes with any of them. Leaves
 must be in strictly ascending `chainKey` order, which is a hash order and not the chain id order, and a
 repeated chain key is refused. `lzOftLeaves` sorts by chain id for you; `lzOftRoot`,
-`checkLzOftLeaves` and `createLzOftTransmitterData` reject unsorted input with the factory's
+`requireLzOftLeaves` and `createLzOftTransmitterCalldata` reject unsorted input with the factory's
 `LeavesNotSorted(index)`, and also reject no leaves, a zero eid or OFT, and, given the home, a leaf for
 the home chain or the home's eid. The Foundry `LzOft` library offers the same checks, root, calldata and
-prediction (`LzOft.root`, `createTransmitterData`, `predictConduit`) for leaves already in order.
+prediction (`LzOft.root`, `createTransmitterCalldata`, `predictConduit`) for leaves already in order.
 Destinations are fixed at creation: another chain needs another conduit.
 
 This creation path serves plain and signed conduits alike, and the factory fixes the mode at creation

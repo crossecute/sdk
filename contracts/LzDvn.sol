@@ -47,7 +47,7 @@ library LzDvn {
     ///        conduit for a message.
     /// @return dead True when the conduit is plain LayerZero and `sender` requires the dead DVN
     ///         toward `chainId`. `eid` is then the destination's LayerZero id, for `setDvn`.
-    function requiresDeadDvn(address transceiver, address sender, uint256 chainId)
+    function isDeadDvnRequired(address transceiver, address sender, uint256 chainId)
         internal
         view
         returns (bool dead, uint32 eid)

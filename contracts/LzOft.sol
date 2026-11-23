@@ -56,12 +56,12 @@ library LzOft {
 
     /// @notice Offline form of the factory's `_checkLeaves`, in its order, without the checks that read the home
     ///         OFT's peers. Reverts as the factory would.
-    function checkLeaves(ILzOftCreate.Leaf[] memory leaves) internal pure {
+    function requireLeaves(ILzOftCreate.Leaf[] memory leaves) internal pure {
         _check(leaves, false, 0, 0);
     }
 
-    /// @notice `checkLeaves`, and that no leaf names the home chain or the home's eid.
-    function checkLeaves(ILzOftCreate.Leaf[] memory leaves, bytes32 homeChainKey, uint32 homeEid) internal pure {
+    /// @notice `requireLeaves`, and that no leaf names the home chain or the home's eid.
+    function requireLeaves(ILzOftCreate.Leaf[] memory leaves, bytes32 homeChainKey, uint32 homeEid) internal pure {
         _check(leaves, true, homeChainKey, homeEid);
     }
 
@@ -82,7 +82,7 @@ library LzOft {
     /// @notice `LzOftMessage.root` over `leaves`, which must be in ascending `chainKey` order: the
     ///         `destRoot` the factory computes from the same list and binds into the conduit's address.
     function root(ILzOftCreate.Leaf[] memory leaves) internal pure returns (bytes32 destRoot) {
-        checkLeaves(leaves);
+        requireLeaves(leaves);
         bytes32[] memory hashes = new bytes32[](leaves.length);
         for (uint256 i; i < leaves.length; ++i) {
             hashes[i] = leafHash(leaves[i]);
@@ -96,17 +96,17 @@ library LzOft {
         pure
         returns (bytes32)
     {
-        checkLeaves(leaves, homeChainKey, homeEid);
+        requireLeaves(leaves, homeChainKey, homeEid);
         return root(leaves);
     }
 
     /// @notice `createTransmitter` calldata. The owner Safe sends it as a CALL: the owner is `msg.sender`.
-    function createTransmitterData(bytes32 salt, address homeOft, ILzOftCreate.Leaf[] memory leaves)
+    function createTransmitterCalldata(bytes32 salt, address homeOft, ILzOftCreate.Leaf[] memory leaves)
         internal
         pure
         returns (bytes memory)
     {
-        checkLeaves(leaves);
+        requireLeaves(leaves);
         return abi.encodeCall(ILzOftCreate.createTransmitter, (salt, homeOft, leaves));
     }
 

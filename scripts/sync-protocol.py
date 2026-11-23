@@ -10,8 +10,8 @@ generated ABI header and `PROTOCOL_VERSION` repeat it, and ts/test/protocolRelea
 """
 import json, pathlib, re, shutil, subprocess, sys
 
-VERSION = '0.2.0'
-REVISION = 'b647dd8d6a6363d3ebe147265d020baeb93ca3c7'  # the npm-v0.2.0 tag
+VERSION = '0.3.0'
+REVISION = '554a0dd0b1a419479e587e19a5ebe5b2376e4350'  # the npm-v0.3.0 tag
 root = pathlib.Path(__file__).resolve().parents[1]
 
 # (exported name, Forge profile directory, artifact file, contract)
@@ -34,7 +34,7 @@ ABIS = [
 MEMBERS = {
     'signedTransmitterAbi': {
         'functions': ['sendMessage', 'quoteMessage', 'bootstrap', 'bootstrapPayload', 'payloadForCalls', 'quoteBootstrap',
-                      'quoteSignedMessage', 'quoteRelay', 'quoteAuthority', 'relayLeaf', 'relayAuthority', 'registerRoot',
+                      'quoteMessageSigned', 'quoteRelay', 'quoteAuthority', 'relayLeaf', 'relayAuthority', 'registerRoot',
                       'isRootRegistered', 'isLeafRelayed', 'isSigned', 'initializeSigned', 'isBootstrapped', 'isBootstrappedOn',
                       'destinationReceiverOn', 'recipientOn', 'owner', 'execute'],
         'events': ['MessageSent', 'LeafRelayed', 'AuthorityRelayed', 'RootRegistered', 'DestinationBootstrapped',
