@@ -81,6 +81,30 @@ contract SafeTxTest is Test {
         assertEq(SafeTxHash.DOMAIN_TYPEHASH, 0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218);
     }
 
+    function testFuzz_hashMatchesSafeForAllFields(SafeTx memory t) public view {
+        bytes32 expected = safe.getTransactionHash(
+            t.to,
+            t.value,
+            t.data,
+            t.operation,
+            t.safeTxGas,
+            t.baseGas,
+            t.gasPrice,
+            t.gasToken,
+            t.refundReceiver,
+            t.nonce
+        );
+        assertEq(SafeTxHash.hash(block.chainid, address(safe), t), expected);
+        assertEq(
+            keccak256(
+                abi.encodePacked(
+                    hex"1901", SafeTxHash.domainSeparator(block.chainid, address(safe)), SafeTxHash.structHash(t)
+                )
+            ),
+            expected
+        );
+    }
+
     function test_oneCallIsSentDirectly() public {
         Plan memory p = _planned(1);
         (SafeTx memory t, bytes32 h) = script.safeTx(p, 7);
