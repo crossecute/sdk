@@ -5,11 +5,11 @@ Usage: check-lzoft-vectors.py /path/to/protocol
 Writes a Forge script into the checkout's contracts/evm/script, runs it, and removes it, so use a checkout
 that can be touched (CI's, or a copy). The script rebuilds each destination leaf hash, the root of every listed
 prefix of the destinations, the options attribute selector, the factory's conduitSalt and predictConduit, the
-Proxy initcode hash and the createTransmitter calldata with protocol's LzOftConduitAddress, LzMessage and
-LzOftConduitFactory, and reverts on any difference from the SDK's vectors. protocol has no literal OFT vectors
+fixture factory address, Proxy initcode hash and the createTransmitter calldata with protocol's LzOftConduitAddress, LzMessage and
+LzOftConduitFactory and LzOftDeploy, and reverts on any difference from the SDK's vectors. protocol has no literal OFT vectors
 of its own to copy. Every value is matched against a strict format before it is written into Solidity.
 """
-import json, pathlib, re, subprocess, sys
+import json, pathlib, re, subprocess, sys, tomllib
 
 root = pathlib.Path(__file__).resolve().parents[1]
 NAME = 'SdkOftVectors'
@@ -81,8 +81,10 @@ def shape(v, pins):
     return out
 
 
-def source(v, pins):
+def source(v, pins, deployment):
     f = shape(v, pins)
+    guard = addr(deployment.get('address'), 'safe-guard.toml address')
+    multi_send = addr(deployment.get('multi_send_call_only', {}).get('address'), 'safe-guard.toml MultiSendCallOnly')
     body = []
     for i, (key, eid, oft, leaf_hash) in enumerate(f['destinations']):
         body += [
@@ -100,6 +102,7 @@ def source(v, pins):
 pragma solidity ^0.8.20;
 
 import {{Script}} from "forge-std/Script.sol";
+import {{LzOftDeploy}} from "script/deploy/LzOftDeploy.sol";
 import {{LzOftConduitFactory}} from "src/protocols/layerzero/LzOftConduitFactory.sol";
 import {{ILzOftConduitFactory}} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
 import {{LzOftConduitAddress}} from "src/protocols/layerzero/LzOftConduitAddress.sol";
@@ -124,7 +127,9 @@ contract {NAME} is Script {{
 {chr(10).join(body)}
         require(bytes4(LzMessage.OPTIONS_ATTRIBUTE) == {f['selector']}, 'options attribute');
         address f = {f['factory']};
-        vm.etch(f, address(new LzOftConduitFactory(address(new Impl()), address(new Impl()), address(uint160(0x7ea5)))).code);
+        address fixtureTreasury = address(uint160(0x7ea5));
+        require(LzOftDeploy.predictFactory(fixtureTreasury, {guard}, {multi_send}) == f, 'factory fixture');
+        vm.etch(f, address(new LzOftConduitFactory(address(new Impl()), address(new Impl()), fixtureTreasury)).code);
         LzOftConduitFactory factory = LzOftConduitFactory(f);
         require(factory.PROXY_INIT_CODE_HASH() == {f['proxyHash']}, 'proxy initcode hash');
         ILzOftConduitFactory.Destination[] memory used = _prefix(destinations, {n});
@@ -145,7 +150,8 @@ if __name__ == '__main__':
     v = json.loads((root / 'vectors/lzoft.json').read_text())
     pins = json.loads((root / 'vectors/lzoft-protocol.json').read_text())
     path = evm / f'script/{NAME}.s.sol'
-    path.write_text(source(v, pins))
+    deployment = tomllib.loads((evm / 'deploy/safe-guard.toml').read_text())
+    path.write_text(source(v, pins, deployment))
     try:
         subprocess.run(['forge', 'script', str(path.relative_to(evm)), '--tc', NAME], cwd=evm, check=True)
     finally:

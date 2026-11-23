@@ -39,7 +39,8 @@ contract LzOftTest is Test {
     LzOftHarness h = new LzOftHarness();
 
     address constant OWNER = 0x00000000000000000000000000000000DeaDBeef;
-    address constant FACTORY = 0x96ef3e86a1e5Ce9F8A0c30CD0411d7778480Dd32;
+    // LzOftDeploy.predictFactory for the protocol release's authority pins and fixture treasury 0x7ea5.
+    address constant FACTORY = 0x1dA22411c0c55f2f43993E1dA466e8659EE9e536;
     address constant HOME_OFT = 0x00000000000000000000000000000000000F7001;
     bytes32 constant SALT = keccak256("oft-salt");
     uint256 constant HOME_CHAIN_ID = 252;
