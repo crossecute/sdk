@@ -54,6 +54,9 @@ jobs:
           output=$(node dist/cli.js check examples/verify-safe-tx/plan.json examples/verify-safe-tx/safe-tx.json)
           grep -Fx -- "$(tail -n 1 <<< "$output")" README.md
 
+      - run: scripts/check-consumer.sh
+        if: matrix.manager == 'pnpm'
+
       - run: scripts/check-forge-attest.sh
         if: matrix.manager == 'pnpm'
 

@@ -18,11 +18,11 @@ const leaves: s.ExecutionLeaf[] = [0n, 1n, 2n].map((nonce) => (
 ));
 const pkg = () => m.buildMerklePackage(leaves, [{ destination: DESTINATION, nextNonce: 0n }]);
 const standalone = () => b.buildDeliveryBundle({
-  envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 42n, s.signedSendData(DESTINATION, "0xc0de", ["0xaa"]), 3n),
+  envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 42n, s.sendMessageCalldataSigned(DESTINATION, "0xc0de", ["0xaa"]), 3n),
   signatures: "0x123456", nestedApprovals: [nested],
 });
 const merkle = () => b.buildDeliveryBundle({
-  envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 43n, s.registerRootData(pkg().root)), signatures: "0x123456", merkle: pkg(),
+  envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 43n, s.registerRootCalldata(pkg().root)), signatures: "0x123456", merkle: pkg(),
 });
 const edit = (bundle: b.DeliveryBundle, f: (o: any) => void) => { const o = JSON.parse(b.serializeDeliveryBundle(bundle)); f(o); return JSON.stringify(o); };
 
@@ -39,7 +39,7 @@ describe("delivery bundle round trip", () => {
     expect(b.parseDeliveryBundle(b.serializeDeliveryBundle(bundle))).toEqual(bundle);
   });
   it("keeps nonces beyond 2^53 exact", () => {
-    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 2n ** 200n, s.signedSendData(DESTINATION, "0xc0de", []));
+    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 2n ** 200n, s.sendMessageCalldataSigned(DESTINATION, "0xc0de", []));
     const bundle = b.buildDeliveryBundle({ envelope: e, signatures: "0x" });
     expect(b.parseDeliveryBundle(b.serializeDeliveryBundle(bundle)).evidence.signedSafeTx.safeTx.nonce).toBe(2n ** 200n);
   });
@@ -48,13 +48,13 @@ describe("delivery bundle round trip", () => {
 describe("hex case", () => {
   const upper = (hex: Hex) => `0x${hex.slice(2).toUpperCase()}` as Hex;
   it("accepts uppercase calldata and signatures and builds the form parse reads", () => {
-    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, s.signedSendData(DESTINATION, "0xc0de", []));
+    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, s.sendMessageCalldataSigned(DESTINATION, "0xc0de", []));
     const bundle = b.buildDeliveryBundle({ envelope: { ...e, tx: { ...e.tx, data: upper(e.tx.data) } }, signatures: "0xABCD" });
     expect(bundle.evidence.signedSafeTx).toMatchObject({ signatures: "0xabcd", safeTx: { data: e.tx.data } });
     expect(b.parseDeliveryBundle(b.serializeDeliveryBundle(bundle))).toEqual(bundle);
   });
   it("accepts a registration with uppercase calldata and lowercase-address Safes", () => {
-    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 43n, s.registerRootData(pkg().root));
+    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 43n, s.registerRootCalldata(pkg().root));
     const lowered = { ...e, safe: e.safe.toLowerCase() as Address, tx: { ...e.tx, data: upper(e.tx.data) } };
     const bundle = b.buildDeliveryBundle({ envelope: lowered, signatures: "0x", merkle: pkg() });
     expect(b.parseDeliveryBundle(b.serializeDeliveryBundle(bundle))).toEqual(bundle);
@@ -63,7 +63,7 @@ describe("hex case", () => {
     const bundle = merkle();
     const { safeTx } = bundle.evidence.signedSafeTx;
     const edited = { ...bundle, evidence: { ...bundle.evidence, signedSafeTx: { ...bundle.evidence.signedSafeTx, safeTx: { ...safeTx, data: upper(safeTx.data) } } } };
-    expect(() => b.verifyDeliveryBundle(edited)).not.toThrow();
+    expect(() => b.requireDeliveryBundle(edited)).not.toThrow();
   });
 });
 
@@ -74,7 +74,7 @@ describe("verification matches the builders", () => {
     expect(() => b.buildDeliveryBundle({ envelope: envelopeFor(empty), signatures: "0x" })).toThrow("empty signed payload");
   });
   it("rejects a zero or oversized chain id and an oversized nonce", () => {
-    const send = s.signedSendData(DESTINATION, "0xc0de", []);
+    const send = s.sendMessageCalldataSigned(DESTINATION, "0xc0de", []);
     expect(() => b.buildDeliveryBundle({ envelope: envelopeFor(send, 0n), signatures: "0x" })).toThrow("invalid source chain id");
     expect(() => b.buildDeliveryBundle({ envelope: envelopeFor(send, 2n ** 256n), signatures: "0x" })).toThrow("invalid source chain id");
     expect(() => b.buildDeliveryBundle({ envelope: envelopeFor(send, 1n, 2n ** 256n), signatures: "0x" })).toThrow("invalid Safe nonce or value");
@@ -92,28 +92,28 @@ describe("delivery bundle checks", () => {
     expect(() => b.parseDeliveryBundle(edit(standalone(), (o) => { o.signedSafeTx.safeTx.value = "4"; }))).toThrow("safeTxHash mismatch");
   });
   it("requires a CALL", () => {
-    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, s.signedSendData(DESTINATION, "0xc0de", []));
+    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, s.sendMessageCalldataSigned(DESTINATION, "0xc0de", []));
     expect(() => b.buildDeliveryBundle({ envelope: { ...e, tx: { ...e.tx, operation: 1 } }, signatures: "0x" })).toThrow("must be a CALL");
   });
   it("accepts only an exact sendMessage when standalone", () => {
-    const send = s.signedSendData(DESTINATION, "0xc0de", []);
+    const send = s.sendMessageCalldataSigned(DESTINATION, "0xc0de", []);
     const build = (data: Hex) => () => b.buildDeliveryBundle({ envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, data), signatures: "0x" });
     expect(build(send)).not.toThrow();
     expect(build(`${send}00`)).toThrow("not a signed sendMessage");
-    expect(build(s.registerRootData(word(1)))).toThrow("not a signed sendMessage");
+    expect(build(s.registerRootCalldata(word(1)))).toThrow("not a signed sendMessage");
     expect(build("0x")).toThrow("not a signed sendMessage");
   });
   it("binds a Merkle bundle to a registration of its own root", () => {
     const build = (data: Hex) => () => b.buildDeliveryBundle({ envelope: s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, data), signatures: "0x", merkle: pkg() });
-    expect(build(s.registerRootData(pkg().root))).not.toThrow();
-    expect(build(s.registerRootData(word(1)))).toThrow("not registerRoot of the package root");
-    expect(build(s.signedSendData(DESTINATION, "0xc0de", []))).toThrow("not registerRoot of the package root");
+    expect(build(s.registerRootCalldata(pkg().root))).not.toThrow();
+    expect(build(s.registerRootCalldata(word(1)))).toThrow("not registerRoot of the package root");
+    expect(build(s.sendMessageCalldataSigned(DESTINATION, "0xc0de", []))).toThrow("not registerRoot of the package root");
   });
   it("rejects a package whose tree does not match its leaves", () => {
     expect(() => b.parseDeliveryBundle(edit(merkle(), (o) => { o.merkle.leaves[1].proof = []; }))).toThrow("proof mismatch at 1");
   });
   it("rejects duplicate nested approvals", () => {
-    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, s.signedSendData(DESTINATION, "0xc0de", []));
+    const e = s.signedDispatchTx(1n, SAFE, TRANSMITTER, 1n, s.sendMessageCalldataSigned(DESTINATION, "0xc0de", []));
     expect(() => b.buildDeliveryBundle({ envelope: e, signatures: "0x", nestedApprovals: [nested, nested] })).toThrow("duplicate nested approval");
     expect(() => b.buildDeliveryBundle({ envelope: e, signatures: "0x", nestedApprovals: [nested, { ...nested, messageHash: word(6) }] })).not.toThrow();
   });
@@ -132,10 +132,10 @@ describe("delivery from a bundle", () => {
   it("builds the same calldata as the direct builders", () => {
     const bundle = merkle(), { evidence } = bundle;
     pkg().leaves.forEach((entry, i) => {
-      expect(b.relayLeafFromBundle(bundle, i)).toBe(s.relayLeafData(evidence, entry.leaf, entry.proof));
-      expect(b.submitLeafFromBundle(bundle, i)).toBe(s.submitLeafData(evidence, entry.leaf, entry.proof));
+      expect(b.relayLeafFromBundle(bundle, i)).toBe(s.relayLeafCalldata(evidence, entry.leaf, entry.proof));
+      expect(b.submitLeafFromBundle(bundle, i)).toBe(s.submitLeafCalldata(evidence, entry.leaf, entry.proof));
     });
-    expect(b.submitMessageFromBundle(standalone())).toBe(s.submitMessageData(standalone().evidence));
+    expect(b.submitMessageFromBundle(standalone())).toBe(s.submitMessageCalldata(standalone().evidence));
   });
   it("refuses the wrong delivery for the bundle", () => {
     expect(() => b.submitMessageFromBundle(merkle())).toThrow("not a standalone bundle");

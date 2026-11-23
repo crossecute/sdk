@@ -3,8 +3,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type SafeQueueSigner, buildDeliveryBundle, buildMerklePackage, encodeEvm, parseDeliveryBundle,
-  registerRootData, SafeQueue, serializeDeliveryBundle, serializeSafeTxFields, signedDispatchNotice,
-  signedDispatchTx, signedSendData, submitLeafFromBundle, submitMessageFromBundle,
+  registerRootCalldata, SafeQueue, serializeDeliveryBundle, serializeSafeTxFields, signedDispatchNotice,
+  signedDispatchTx, sendMessageCalldataSigned, submitLeafFromBundle, submitMessageFromBundle,
 } from "../src/index.js";
 
 const safe = "0x0000000000000000000000000000000000000001";
@@ -20,7 +20,7 @@ function draft(kind: "standalone" | "merkle" = "standalone") {
     [0n, 1n].map((nonce) => ({ destination, nonce, validAfter: 0n, deadline: 100n, calls, attributes: [] })),
     [{ destination, nextNonce: 0n }],
   ) : undefined;
-  const payload = merkle ? registerRootData(merkle.root) : signedSendData(destination, calls, []);
+  const payload = merkle ? registerRootCalldata(merkle.root) : sendMessageCalldataSigned(destination, calls, []);
   return buildDeliveryBundle({ envelope: signedDispatchTx(10n, safe, transmitter, 42n, payload), signatures: "0x", merkle });
 }
 

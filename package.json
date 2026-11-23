@@ -1,6 +1,6 @@
 {
   "name": "@crossecute/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Foundry and TypeScript helpers for building, simulating and checking Crossecute operations",
   "license": "MIT",
   "type": "module",
@@ -35,7 +35,7 @@
     "test:attest": "scripts/check-forge-attest.sh"
   },
   "dependencies": {
-    "@crossecute/protocol": "0.2.0"
+    "@crossecute/protocol": "0.3.0"
   },
   "peerDependencies": {
     "@openzeppelin/contracts": "5.4.0",

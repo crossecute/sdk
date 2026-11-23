@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { checkPlan, parsePlan } from "../src/plan.js";
+import { requirePlan, parsePlan } from "../src/plan.js";
 
 // Written by test/CrossecuteScript.t.sol's test_planFile.
 const json = readFileSync(new URL("../../out/test-plan.json", import.meta.url), "utf8");
@@ -15,19 +15,19 @@ describe("plan files", () => {
     const plan = parsePlan(json);
     expect(plan.batches[0].bootstrap).toBe(true);
     expect(plan.batches[0].attributes).toEqual(["0xdeadbeef"]);
-    expect(() => checkPlan(plan)).not.toThrow();
+    expect(() => requirePlan(plan)).not.toThrow();
   });
 
   it("rejects calldata that does not carry its batch", () => {
     const plan = parsePlan(json);
     plan.batches[0].calls[0].data = "0x00";
-    expect(() => checkPlan(plan)).toThrow("does not carry batches[0]");
+    expect(() => requirePlan(plan)).toThrow("does not carry batches[0]");
   });
 
   it("rejects a call to another address", () => {
     const plan = parsePlan(json);
     plan.calls[0].to = "0x0000000000000000000000000000000000000001";
-    expect(() => checkPlan(plan)).toThrow("not to the transmitter");
+    expect(() => requirePlan(plan)).toThrow("not to the transmitter");
   });
 
   it("rejects an unknown version", () => {
@@ -70,8 +70,8 @@ describe("plan files", () => {
     raw.batches[0].attributes[0] = "0xDEADBEEF";
     const plan = parsePlan(JSON.stringify(raw));
     expect(plan.batches[0].attributes[0]).toBe("0xdeadbeef");
-    expect(() => checkPlan(plan)).not.toThrow();
+    expect(() => requirePlan(plan)).not.toThrow();
     plan.batches[0].attributes[0] = "0xDEADBEEF";
-    expect(() => checkPlan(plan)).not.toThrow();
+    expect(() => requirePlan(plan)).not.toThrow();
   });
 });

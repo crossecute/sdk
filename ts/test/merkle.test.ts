@@ -41,7 +41,7 @@ describe("package parity with the Solidity reference", () => {
       expect(pkg.root).toBe(v.root);
       expect(pkg.leaves.map((e) => e.hash)).toEqual(v.hashes);
       pkg.leaves.forEach((e, i) => expect(e.proof).toEqual(v[`proof${i}`]));
-      m.verifyMerklePackage(pkg);
+      m.requireMerklePackage(pkg);
     });
   }
 
@@ -57,7 +57,7 @@ describe("package parity with the Solidity reference", () => {
 
   it("publishes the ordered encoded leaves the guard roots", () => {
     const pkg = m.buildMerklePackage(guardLeaves(3), nonces());
-    const { functionName, args } = decodeFunctionData({ abi: crossecuteGuardAbi, data: m.merklePublishData(pkg) });
+    const { functionName, args } = decodeFunctionData({ abi: crossecuteGuardAbi, data: m.publishMerklePackageCalldata(pkg) });
     expect(functionName).toBe("publishLeaves");
     expect(args![0]).toEqual(pkg.leaves.map(({ leaf }) => s.encodeExecutionLeaf(leaf)));
   });
@@ -141,7 +141,7 @@ describe("package files written by MerklePackageJson", () => {
     it(name, () => {
       const raw = readFileSync(new URL(`../../vectors/merkle-package-${name}.json`, import.meta.url), "utf8");
       const pkg = m.parseMerklePackage(raw);
-      expect(JSON.stringify(m.merklePackageToJSON(pkg))).toBe(raw);
+      expect(JSON.stringify(m.merklePackageToJsonObject(pkg))).toBe(raw);
       expect(pkg).toEqual(m.buildMerklePackage(leaves, receiverNonces));
     });
   }

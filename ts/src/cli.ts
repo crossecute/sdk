@@ -11,9 +11,9 @@ import { AuthoritySource, planAuthorityCatchUp } from "./authority.js";
 import { scaffoldAuthorityRelay } from "./authorityAttest.js";
 import { parseDeliveryBundle, serializeDeliveryBundle } from "./bundle.js";
 import { address, array, bytesHex, object, uint } from "./json.js";
-import { checkPlan, parsePlan } from "./plan.js";
+import { requirePlan, parsePlan } from "./plan.js";
 import { SafeQueue, type SafeQueueSigner } from "./safeQueue.js";
-import { checkSafeTx, parseSafeTxTypedData, safeTxHashes, serializeSafeTxFields } from "./safeTx.js";
+import { requireSafeTx, parseSafeTxTypedData, safeTxHashes, serializeSafeTxFields } from "./safeTx.js";
 
 const usage = `usage: crossecute check <plan.json> [safe-tx.json]
        crossecute signed-propose <unsigned-bundle.json> <owner>
@@ -73,7 +73,7 @@ async function signedQueue(command: string, draftPath: string, owners: string[])
 
 function check(planPath: string, safeTxPath?: string): void {
   const plan = parsePlan(readFileSync(planPath, "utf8"));
-  checkPlan(plan);
+  requirePlan(plan);
   console.log(
     `plan for Safe ${plan.owner} on chain ${plan.homeChainId}: ${plan.calls.length} call(s), ` +
       `fee ${formatEther(plan.fee)}, top-up ${formatEther(plan.calls[0].value)}`,
@@ -84,7 +84,7 @@ function check(planPath: string, safeTxPath?: string): void {
   if (!safeTxPath) return;
 
   const envelope = parseSafeTxTypedData(readFileSync(safeTxPath, "utf8"));
-  checkSafeTx(plan, envelope);
+  requireSafeTx(plan, envelope);
   const { domainHash, messageHash, safeTxHash } = safeTxHashes(envelope);
   console.log(`Safe transaction at nonce ${envelope.tx.nonce}${envelope.tx.operation === 1 ? " through MultiSendCallOnly" : ""}`);
   console.log(`  domain hash:  ${domainHash}`);

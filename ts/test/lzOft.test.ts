@@ -4,7 +4,7 @@ import { type Address, type Hex, decodeFunctionData, getAddress, keccak256, stri
 import { chainKey } from "../src/encoding.js";
 import * as sdk from "../src/index.js";
 import {
-  LZ_OFT_PROXY_INIT_CODE_HASH, LZ_OPTIONS_ATTRIBUTE, checkLzOftLeaves, createLzOftTransmitterData, lzOftConduitSalt,
+  LZ_OFT_PROXY_INIT_CODE_HASH, LZ_OPTIONS_ATTRIBUTE, requireLzOftLeaves, createLzOftTransmitterCalldata, lzOftConduitSalt,
   lzOftCreateTx, lzOftLeafHash, lzOftLeaves, lzOftRoot, lzOptionsAttribute, predictLzOftConduit, type LzOftLeaf,
 } from "../src/lzOft.js";
 import { lzOftConduitFactoryAbi, signedTransmitterAbi } from "../src/signedAbi.js";
@@ -43,9 +43,9 @@ describe("options attribute", () => {
   });
   it("travels unchanged through the signed builders", () => {
     const attributes = [lzOptionsAttribute(vector.options)];
-    const send = decodeFunctionData({ abi: signedTransmitterAbi, data: sdk.signedSendData("0x00010000010a141111111111111111111111111111111111111111", "0xabcdef", attributes) });
+    const send = decodeFunctionData({ abi: signedTransmitterAbi, data: sdk.sendMessageCalldataSigned("0x00010000010a141111111111111111111111111111111111111111", "0xabcdef", attributes) });
     expect(send.args?.[2]).toEqual(attributes);
-    const bootstrap = decodeFunctionData({ abi: signedTransmitterAbi, data: sdk.signedBootstrapData("0x00010000010a00", {
+    const bootstrap = decodeFunctionData({ abi: signedTransmitterAbi, data: sdk.bootstrapCalldataSigned("0x00010000010a00", {
       guard: zeroAddress, updateHead: "0x" + "11".repeat(32) as Hex, setupCalls: sdk.encodeCalls([]),
       authority: { nodes: [{ record: { safe: fields.owner, threshold: 1n, owners: [{ owner: "0x0000000000000000000000000000000000005555", kind: 0 }] }, position: zeroHash }] },
     }, fields.owner, attributes) });
@@ -79,7 +79,7 @@ describe("leaf checks", () => {
   it("refuse no leaves", () => expect(() => lzOftRoot([])).toThrow("NoDestinations"));
   it("refuse unsorted leaves", () => {
     expect(() => lzOftRoot([b, a])).toThrow("LeavesNotSorted(1)");
-    expect(() => createLzOftTransmitterData(fields.salt, fields.homeOft, [b, a])).toThrow("LeavesNotSorted(1)");
+    expect(() => createLzOftTransmitterCalldata(fields.salt, fields.homeOft, [b, a])).toThrow("LeavesNotSorted(1)");
   });
   it("refuse a repeated chain key", () => {
     expect(() => lzOftRoot([a, a])).toThrow("LeavesNotSorted(1)");
@@ -87,23 +87,23 @@ describe("leaf checks", () => {
     expect(() => lzOftLeaves([{ chainId: 10n, eid: 1, oft: a.oft }, { chainId: 10n, eid: 2, oft: b.oft }])).toThrow("LeavesNotSorted(1)");
   });
   it("refuse a zero or out of range eid, a zero OFT and a malformed key", () => {
-    expect(() => checkLzOftLeaves([{ ...a, eid: 0 }])).toThrow("BadLeaf(0)");
-    expect(() => checkLzOftLeaves([{ ...a, eid: 2 ** 32 }])).toThrow("BadLeaf(0)");
-    expect(() => checkLzOftLeaves([{ ...a, eid: 1.5 }])).toThrow("BadLeaf(0)");
-    expect(() => checkLzOftLeaves([a, { ...b, oft: zeroAddress }])).toThrow("BadLeaf(1)");
-    expect(() => checkLzOftLeaves([{ ...a, chainKey: "0x01" }])).toThrow("BadLeaf(0)");
+    expect(() => requireLzOftLeaves([{ ...a, eid: 0 }])).toThrow("BadLeaf(0)");
+    expect(() => requireLzOftLeaves([{ ...a, eid: 2 ** 32 }])).toThrow("BadLeaf(0)");
+    expect(() => requireLzOftLeaves([{ ...a, eid: 1.5 }])).toThrow("BadLeaf(0)");
+    expect(() => requireLzOftLeaves([a, { ...b, oft: zeroAddress }])).toThrow("BadLeaf(1)");
+    expect(() => requireLzOftLeaves([{ ...a, chainKey: "0x01" }])).toThrow("BadLeaf(0)");
   });
   it("refuse the home chain and the home's eid when the home is given", () => {
-    expect(() => checkLzOftLeaves([a, b], home)).not.toThrow();
-    expect(() => checkLzOftLeaves([a, b], { ...home, chainKey: b.chainKey })).toThrow("BadLeaf(1)");
-    expect(() => checkLzOftLeaves([a, b], { ...home, eid: a.eid })).toThrow("BadLeaf(0)");
+    expect(() => requireLzOftLeaves([a, b], home)).not.toThrow();
+    expect(() => requireLzOftLeaves([a, b], { ...home, chainKey: b.chainKey })).toThrow("BadLeaf(1)");
+    expect(() => requireLzOftLeaves([a, b], { ...home, eid: a.eid })).toThrow("BadLeaf(0)");
     expect(() => lzOftLeaves([{ chainId: BigInt(vector.home.chainId), eid: 7, oft: a.oft }], home)).toThrow("BadLeaf(0)");
   });
 });
 
 describe("conduit creation and address against the Solidity builders", () => {
   it("encodes the factory's createTransmitter call", () => {
-    const data = createLzOftTransmitterData(fields.salt, fields.homeOft, conduitLeaves);
+    const data = createLzOftTransmitterCalldata(fields.salt, fields.homeOft, conduitLeaves);
     expect(data).toBe(vector.createData);
     const decoded = decodeFunctionData({ abi: lzOftConduitFactoryAbi, data });
     expect(decoded.functionName).toBe("createTransmitter");

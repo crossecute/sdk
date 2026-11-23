@@ -49,7 +49,7 @@ export function lzOftLeafHash(leaf: LzOftLeaf): Hex {
  * ascending `chainKey` (a repeat is refused too), and a nonzero eid and OFT. With `home`, no leaf may name the
  * home chain or the home's eid. Messages name the factory's errors.
  */
-export function checkLzOftLeaves(leaves: readonly LzOftLeaf[], home?: LzOftHome): void {
+export function requireLzOftLeaves(leaves: readonly LzOftLeaf[], home?: LzOftHome): void {
   if (!leaves.length) throw new Error("NoDestinations");
   leaves.forEach((l, i) => {
     if (!isHex(l.chainKey) || size(l.chainKey) !== 32) throw new Error(`BadLeaf(${i}): chain key is not 32 bytes`);
@@ -68,7 +68,7 @@ export function lzOftLeaves(destinations: readonly LzOftDestination[], home?: Lz
   const leaves = destinations
     .map((d) => ({ chainKey: chainKey(d.chainId), eid: d.eid, oft: d.oft }))
     .sort((a, b) => (BigInt(a.chainKey) < BigInt(b.chainKey) ? -1 : BigInt(a.chainKey) > BigInt(b.chainKey) ? 1 : 0));
-  checkLzOftLeaves(leaves, home);
+  requireLzOftLeaves(leaves, home);
   return leaves;
 }
 
@@ -77,7 +77,7 @@ export function lzOftLeaves(destinations: readonly LzOftDestination[], home?: Lz
  * The leaves must already be in ascending `chainKey` order (see `lzOftLeaves`).
  */
 export function lzOftRoot(leaves: readonly LzOftLeaf[], home?: LzOftHome): Hex {
-  checkLzOftLeaves(leaves, home);
+  requireLzOftLeaves(leaves, home);
   return dispatchTreeFromHashes(leaves.map(lzOftLeafHash)).root;
 }
 
@@ -87,14 +87,14 @@ export function lzOftRoot(leaves: readonly LzOftLeaf[], home?: LzOftHome): Hex {
  * when the owner Safe's guard is installed at that moment, which this package cannot read. Peers, eids and the
  * guard are not checked here.
  */
-export function createLzOftTransmitterData(salt: Hex, homeOft: Address, leaves: readonly LzOftLeaf[]): Hex {
-  checkLzOftLeaves(leaves);
+export function createLzOftTransmitterCalldata(salt: Hex, homeOft: Address, leaves: readonly LzOftLeaf[]): Hex {
+  requireLzOftLeaves(leaves);
   return encodeFunctionData({ abi: lzOftConduitFactoryAbi, functionName: "createTransmitter", args: [salt, homeOft, leaves] });
 }
 
 /** The owner Safe's CALL to the factory that creates the conduit, as `signedDispatchTx` builds any plain CALL. */
 export function lzOftCreateTx(chainId: bigint, ownerSafe: Address, factory: Address, nonce: bigint, salt: Hex, homeOft: Address, leaves: readonly LzOftLeaf[]): SafeTxEnvelope {
-  return signedDispatchTx(chainId, ownerSafe, factory, nonce, createLzOftTransmitterData(salt, homeOft, leaves));
+  return signedDispatchTx(chainId, ownerSafe, factory, nonce, createLzOftTransmitterCalldata(salt, homeOft, leaves));
 }
 
 export type LzOftConduitFields = { owner: Address; salt: Hex; homeChainKey: Hex; homeEid: number; homeOft: Address; destRoot: Hex };

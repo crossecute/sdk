@@ -51,7 +51,7 @@ describe("protocol release pin", () => {
       const present = abi.filter((f) => f.type === "function").map((f) => f.name);
       for (const fn of fns) expect(present, fn).toContain(fn);
     };
-    has(sdk.signedTransmitterAbi, "quoteBootstrap", "quoteRelay", "relayAuthority", "quoteAuthority", "isSigned", "relayLeaf", "registerRoot", "quoteSignedMessage", "sendMessage", "bootstrap");
+    has(sdk.signedTransmitterAbi, "quoteBootstrap", "quoteRelay", "relayAuthority", "quoteAuthority", "isSigned", "relayLeaf", "registerRoot", "quoteMessageSigned", "sendMessage", "bootstrap");
     has(sdk.signedReceiverAbi, "selection", "graph", "submitLeaf", "submitMessage", "submitAuthority");
     has(sdk.transceiverBaseAbi, "predictReceiver", "bootstrapSigned", "quoteBootstrapSigned");
     has(sdk.conduitTransceiverAbi, "predictReceiver", "signedAuthority");

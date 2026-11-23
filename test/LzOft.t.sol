@@ -28,7 +28,7 @@ contract LzOftHarness {
         pure
         returns (bytes memory)
     {
-        return LzOft.createTransmitterData(salt, homeOft, leaves);
+        return LzOft.createTransmitterCalldata(salt, homeOft, leaves);
     }
 }
 
@@ -168,7 +168,7 @@ contract LzOftTest is Test {
 
     function test_theCreationDataIsTheFactorysCall() public pure {
         (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
-        bytes memory data = LzOft.createTransmitterData(SALT, HOME_OFT, _prefix(leaves, 3));
+        bytes memory data = LzOft.createTransmitterCalldata(SALT, HOME_OFT, _prefix(leaves, 3));
         assertEq(bytes4(data), bytes4(keccak256("createTransmitter(bytes32,address,(bytes32,uint32,address)[])")));
     }
 
@@ -264,7 +264,7 @@ contract LzOftTest is Test {
         bytes32 destRoot = LzOft.root(used, homeKey, HOME_EID);
         return string.concat(
             '"createData":"',
-            vm.toString(LzOft.createTransmitterData(SALT, HOME_OFT, used)),
+            vm.toString(LzOft.createTransmitterCalldata(SALT, HOME_OFT, used)),
             '","conduitLeaves":',
             vm.toString(CONDUIT_LEAVES),
             ',"proxyInitCodeHash":"',

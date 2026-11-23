@@ -30,16 +30,16 @@ describe("signed dispatch Solidity parity", () => {
   const checks: Record<string, () => Hex> = {
     executionFields: () => s.encodeExecutionLeaf(leaf), executionHash: () => s.executionLeafHash(leaf),
     executionId: () => s.executionId(leaf), authorityGraph: () => s.encodeAuthorityGraph(graph),
-    bootstrapBody: () => s.encodeSignedBootstrap(bootstrap, OWNER),
-    bootstrapData: () => s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, OWNER, leaf.attributes),
-    sendData: () => s.signedSendData(leaf.destination, leaf.calls, leaf.attributes),
+    bootstrapBody: () => s.encodeBootstrapBodySigned(bootstrap, OWNER),
+    bootstrapData: () => s.bootstrapCalldataSigned(BOOTSTRAP_DESTINATION, bootstrap, OWNER, leaf.attributes),
+    sendData: () => s.sendMessageCalldataSigned(leaf.destination, leaf.calls, leaf.attributes),
     standaloneWire: () => s.encodeStandaloneWire(evidence), merkleWire: () => s.encodeMerkleWire(evidence, leaf, []),
-    registerData: () => s.registerRootData(s.executionLeafHash(leaf)),
-    relayData: () => s.relayLeafData(evidence, leaf, []), submitMessageData: () => s.submitMessageData(evidence),
-    submitLeafData: () => s.submitLeafData(evidence, leaf, []),
+    registerData: () => s.registerRootCalldata(s.executionLeafHash(leaf)),
+    relayData: () => s.relayLeafCalldata(evidence, leaf, []), submitMessageData: () => s.submitMessageCalldata(evidence),
+    submitLeafData: () => s.submitLeafCalldata(evidence, leaf, []),
     safeMessageHash: () => s.safeMessageHash(1n, addr(0x3333), "0xabcdef"), safeTxHash: () => safeTxHashes(envelope).safeTxHash,
-    publishData: () => s.publishLeavesData(fields), oddRoot: () => s.dispatchTree(fields).root,
-    safeBatchData: () => s.safeBatchData([{ envelope, signatures: evidence.signedSafeTx.signatures }]),
+    publishData: () => s.publishLeavesCalldata(fields), oddRoot: () => s.dispatchTree(fields).root,
+    safeBatchData: () => s.safeBatchCalldata([{ envelope, signatures: evidence.signedSafeTx.signatures }]),
   };
   for (const [name, fn] of Object.entries(checks)) it(name, () => expect(fn()).toBe(vectors[name]));
 });
@@ -66,8 +66,8 @@ describe("Merkle publication and replay", () => {
   });
   it("rejects empty publication and empty send", () => {
     expect(() => s.dispatchTree([])).toThrow("no leaves");
-    expect(() => s.publishLeavesData([])).toThrow("no leaves");
-    expect(() => s.signedSendData(leaf.destination, "0x", [])).toThrow("empty signed payload");
+    expect(() => s.publishLeavesCalldata([])).toThrow("no leaves");
+    expect(() => s.sendMessageCalldataSigned(leaf.destination, "0x", [])).toThrow("empty signed payload");
   });
 });
 
@@ -75,29 +75,29 @@ describe("signed bootstrap", () => {
   it("decodes to the guard, head, encoded graph and setup calls", () => {
     const [decoded] = decodeAbiParameters(
       [{ type: "tuple", components: [{ name: "guard", type: "address" }, { name: "updateHead", type: "bytes32" }, { name: "authority", type: "bytes" }, { name: "setupCalls", type: "bytes" }] }],
-      s.encodeSignedBootstrap(bootstrap, OWNER),
+      s.encodeBootstrapBodySigned(bootstrap, OWNER),
     );
     expect(decoded).toEqual({ guard: GUARD, updateHead: HEAD, authority: s.encodeAuthorityGraph(graph), setupCalls: encodeCalls([]) });
   });
   it("wraps the body in the destination payload of bootstrap(payload, attributes)", () => {
-    const { functionName, args } = decodeFunctionData({ abi: signedTransmitterAbi, data: s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, OWNER, ["0xaa"]) });
+    const { functionName, args } = decodeFunctionData({ abi: signedTransmitterAbi, data: s.bootstrapCalldataSigned(BOOTSTRAP_DESTINATION, bootstrap, OWNER, ["0xaa"]) });
     expect(functionName).toBe("bootstrap");
-    expect(args).toEqual([encodeBootstrap(BOOTSTRAP_DESTINATION, s.encodeSignedBootstrap(bootstrap, OWNER)), ["0xaa"]]);
+    expect(args).toEqual([encodeBootstrap(BOOTSTRAP_DESTINATION, s.encodeBootstrapBodySigned(bootstrap, OWNER)), ["0xaa"]]);
   });
   it("refuses a zero head and an invalid graph before encoding", () => {
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, updateHead: zeroHash }, OWNER)).toThrow("zero update head");
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: { nodes: [] } }, OWNER)).toThrow("wrong authority root");
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: { nodes: [graph.nodes[0]] } }, OWNER)).toThrow("missing authority record");
+    expect(() => s.encodeBootstrapBodySigned({ ...bootstrap, updateHead: zeroHash }, OWNER)).toThrow("zero update head");
+    expect(() => s.encodeBootstrapBodySigned({ ...bootstrap, authority: { nodes: [] } }, OWNER)).toThrow("wrong authority root");
+    expect(() => s.encodeBootstrapBodySigned({ ...bootstrap, authority: { nodes: [graph.nodes[0]] } }, OWNER)).toThrow("missing authority record");
   });
   it("refuses a graph rooted at a Safe other than the owner", () => {
     const other = addr(0x9999);
-    expect(() => s.encodeSignedBootstrap(bootstrap, other)).toThrow("wrong authority root");
-    expect(() => s.signedBootstrapData(BOOTSTRAP_DESTINATION, bootstrap, other, [])).toThrow("wrong authority root");
+    expect(() => s.encodeBootstrapBodySigned(bootstrap, other)).toThrow("wrong authority root");
+    expect(() => s.bootstrapCalldataSigned(BOOTSTRAP_DESTINATION, bootstrap, other, [])).toThrow("wrong authority root");
     // A graph that is canonical for its own root still fails for the owner.
     const rerooted = { nodes: [{ ...graph.nodes[1], position: zeroHash }] };
-    s.validateAuthorityGraph(rerooted, addr(0x3333));
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: rerooted }, OWNER)).toThrow("wrong authority root");
-    expect(() => s.encodeSignedBootstrap({ ...bootstrap, authority: rerooted }, addr(0x3333))).not.toThrow();
+    s.requireAuthorityGraph(rerooted, addr(0x3333));
+    expect(() => s.encodeBootstrapBodySigned({ ...bootstrap, authority: rerooted }, OWNER)).toThrow("wrong authority root");
+    expect(() => s.encodeBootstrapBodySigned({ ...bootstrap, authority: rerooted }, addr(0x3333))).not.toThrow();
   });
 });
 
@@ -111,10 +111,10 @@ describe("protocol #109 authority vectors", () => {
         position: n.position,
       }));
       const g = { nodes };
-      s.validateAuthorityGraph(g, v.sourceSafe);
+      s.requireAuthorityGraph(g, v.sourceSafe);
       expect(nodes.map((n) => s.authorityRecordHash(n.record))).toEqual(v.graph.entries.map((e: any) => e.recordHash));
       expect(s.authorityGraphHash(BigInt(v.sourceChainId), g)).toBe(v.graph.graphHash);
-      expect(s.encodeSignedBootstrap({ guard: v.guard, updateHead: v.updateHead, authority: g, setupCalls: encodeCalls([]) }, v.sourceSafe)).toBe(v.encoded);
+      expect(s.encodeBootstrapBodySigned({ guard: v.guard, updateHead: v.updateHead, authority: g, setupCalls: encodeCalls([]) }, v.sourceSafe)).toBe(v.encoded);
     });
   }
   it("commits to the source chain, each record and each position", () => {
@@ -130,19 +130,19 @@ describe("selected authority graph validation", () => {
   const [rootNode, childNode] = graph.nodes;
   const owners = (n: number, start = 0x100) => Array.from({ length: n }, (_, i) => ({ owner: addr(start + i), kind: 0 as const }));
   it("accepts canonical nested and shared Safe graphs", () => {
-    s.validateAuthorityGraph(graph, root);
+    s.requireAuthorityGraph(graph, root);
     const shared: s.AuthorityGraph = { nodes: [
       { ...rootNode, record: { ...rootNode.record, owners: [...rootNode.record.owners, { owner: addr(0x8888), kind: 1 }] } },
       childNode,
       { record: { safe: addr(0x8888), threshold: 1n, owners: [{ owner: addr(0x3333), kind: 1 }] }, position: word(11) },
     ] };
-    s.validateAuthorityGraph(shared, root);
+    s.requireAuthorityGraph(shared, root);
   });
   it("rejects cycles, unreachable, duplicate, missing and reordered nodes", () => {
     const extra = { record: { ...childNode.record, safe: addr(0x8888) }, position: word(11) };
     for (const nodes of [[], [rootNode, childNode, childNode], [childNode, rootNode], [rootNode], [rootNode, childNode, extra],
       [rootNode, { ...childNode, record: { ...childNode.record, owners: [{ owner: root, kind: 1 as const }] } }],
-    ]) expect(() => s.validateAuthorityGraph({ nodes }, root)).toThrow();
+    ]) expect(() => s.requireAuthorityGraph({ nodes }, root)).toThrow();
   });
   it("rejects invalid thresholds, owners and kinds", () => {
     const withRoot = (record: s.SafeAuthorityRecord): s.AuthorityGraph => ({ nodes: [{ record, position: zeroHash }] });
@@ -153,19 +153,19 @@ describe("selected authority graph validation", () => {
       { ...rootNode.record, threshold: 1n, owners: [{ owner: root, kind: 0 as const }] },
       { ...rootNode.record, threshold: 1n, owners: [...owners(1), ...owners(1)] },
       { ...rootNode.record, threshold: 1n, owners: [{ owner: addr(0x100), kind: 2 as 0 }] },
-    ]) expect(() => s.validateAuthorityGraph(withRoot(record), root)).toThrow();
+    ]) expect(() => s.requireAuthorityGraph(withRoot(record), root)).toThrow();
     const eoaWithRecord = { ...rootNode, record: { ...rootNode.record, threshold: 1n, owners: [{ owner: addr(0x3333), kind: 0 as const }] } };
-    expect(() => s.validateAuthorityGraph({ nodes: [eoaWithRecord, childNode] }, root)).toThrow("invalid owner kind");
+    expect(() => s.requireAuthorityGraph({ nodes: [eoaWithRecord, childNode] }, root)).toThrow("invalid owner kind");
   });
   it("caps immediate owners at 16", () => {
     const withOwners = (n: number): s.AuthorityGraph => ({ nodes: [{ record: { safe: root, threshold: 1n, owners: owners(n) }, position: zeroHash }] });
-    expect(() => s.validateAuthorityGraph(withOwners(s.MAX_SAFE_OWNERS), root)).not.toThrow();
-    expect(() => s.validateAuthorityGraph(withOwners(s.MAX_SAFE_OWNERS + 1), root)).toThrow("too many owners");
+    expect(() => s.requireAuthorityGraph(withOwners(s.MAX_SAFE_OWNERS), root)).not.toThrow();
+    expect(() => s.requireAuthorityGraph(withOwners(s.MAX_SAFE_OWNERS + 1), root)).toThrow("too many owners");
   });
   it("requires the owner Safe as root at position zero and nonzero descendant positions", () => {
-    expect(() => s.validateAuthorityGraph(graph, addr(0x9999))).toThrow("wrong authority root");
-    expect(() => s.validateAuthorityGraph({ nodes: [{ ...rootNode, position: word(1) }, childNode] }, root)).toThrow("root position not zero");
-    expect(() => s.validateAuthorityGraph({ nodes: [rootNode, { ...childNode, position: zeroHash }] }, root)).toThrow("unproven descendant position");
+    expect(() => s.requireAuthorityGraph(graph, addr(0x9999))).toThrow("wrong authority root");
+    expect(() => s.requireAuthorityGraph({ nodes: [{ ...rootNode, position: word(1) }, childNode] }, root)).toThrow("root position not zero");
+    expect(() => s.requireAuthorityGraph({ nodes: [rootNode, { ...childNode, position: zeroHash }] }, root)).toThrow("unproven descendant position");
   });
 });
 
@@ -179,16 +179,16 @@ describe("source signing", () => {
     expect(s.safeMessageHash(1n, addr(0x3333), "0xabcdef")).not.toBe(s.safeMessageHash(10n, addr(0x3333), "0xabcdef"));
   });
   it("builds separate CALLs and an atomic batch at consecutive Safe nonces", () => {
-    const a = s.signedDispatchTx(1n, envelope.safe, envelope.tx.to, 42n, s.signedSendData(leaf.destination, leaf.calls, []));
-    const b = s.signedDispatchTx(1n, envelope.safe, envelope.tx.to, 43n, s.registerRootData(word(1)));
+    const a = s.signedDispatchTx(1n, envelope.safe, envelope.tx.to, 42n, s.sendMessageCalldataSigned(leaf.destination, leaf.calls, []));
+    const b = s.signedDispatchTx(1n, envelope.safe, envelope.tx.to, 43n, s.registerRootCalldata(word(1)));
     expect(a.tx.operation).toBe(0);
     expect(a.tx.safeTxGas).toBe(0n);
     expect(decodeFunctionData({ abi: signedTransmitterAbi, data: a.tx.data }).functionName).toBe("sendMessage");
-    const data = s.safeBatchData([{ envelope: a, signatures: "0x" }, { envelope: b, signatures: "0x" }]);
+    const data = s.safeBatchCalldata([{ envelope: a, signatures: "0x" }, { envelope: b, signatures: "0x" }]);
     expect(decodeFunctionData({ abi: safeBatchExecutorAbi, data }).args[0]).toHaveLength(2);
     expect(() => s.signedDispatchTx(0n, envelope.safe, envelope.tx.to, 0n, "0x")).toThrow("invalid source chain");
     expect(() => s.signedDispatchTx(1n, envelope.safe, envelope.tx.to, -1n, "0x")).toThrow("invalid Safe nonce");
-    expect(() => s.safeBatchData([{ envelope: b, signatures: "0x" }, { envelope: a, signatures: "0x" }])).toThrow("nonconsecutive");
-    expect(() => s.safeBatchData([{ envelope: a, signatures: "0x" }, { envelope: { ...b, chainId: 10n }, signatures: "0x" }])).toThrow("mixed source chains");
+    expect(() => s.safeBatchCalldata([{ envelope: b, signatures: "0x" }, { envelope: a, signatures: "0x" }])).toThrow("nonconsecutive");
+    expect(() => s.safeBatchCalldata([{ envelope: a, signatures: "0x" }, { envelope: { ...b, chainId: 10n }, signatures: "0x" }])).toThrow("mixed source chains");
   });
 });
