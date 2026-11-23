@@ -52,7 +52,7 @@ describe("protocol release pin", () => {
       const present = abi.filter((f) => f.type === "function").map((f) => f.name);
       for (const fn of fns) expect(present, fn).toContain(fn);
     };
-    has(sdk.signedTransmitterAbi, "quoteBootstrap", "quoteRelay", "relayAuthority", "quoteAuthority", "isSigned", "relayLeaf", "registerRoot", "quoteMessageSigned", "sendMessage", "bootstrap");
+    has(sdk.signedTransmitterAbi, "quoteBootstrap", "quoteLeaf", "relayAuthority", "quoteAuthority", "isSigned", "relayLeaf", "registerRoot", "quoteMessageSigned", "sendMessage", "bootstrap");
     has(sdk.signedReceiverAbi, "selection", "graph", "submitLeaf", "submitMessage", "submitAuthority");
     has(sdk.transceiverBaseAbi, "predictReceiver", "bootstrapSigned", "quoteBootstrapSigned");
     has(sdk.conduitTransceiverAbi, "predictReceiver", "signedAuthority");
@@ -68,11 +68,11 @@ describe("protocol release pin", () => {
     }
   });
 
-  it("keeps the OFT factory's creation errors, with the leaf ordering rule, in the ABI", () => {
+  it("keeps the OFT factory's creation errors, with the destination ordering rule, in the ABI", () => {
     const errors = sdk.lzOftConduitFactoryAbi.filter((f) => f.type === "error").map((f) => f.name);
-    expect(errors).toEqual(expect.arrayContaining(["NoDestinations", "LeavesNotSorted", "BadLeaf", "NotAnOft"]));
+    expect(errors).toEqual(expect.arrayContaining(["NoDestinations", "DestinationsNotSorted", "BadDestination", "NotAnOft", "PeerChanged"]));
     const create = sdk.lzOftConduitFactoryAbi.find((f) => f.type === "function" && f.name === "createTransmitter")!;
-    expect(create.inputs.map((i) => i.name)).toEqual(["salt", "homeOft", "leaves"]);
+    expect(create.inputs.map((i) => i.name)).toEqual(["salt", "homeOft", "destinations"]);
     expect((create.inputs[2] as any).components.map((c: any) => `${c.name}:${c.type}`)).toEqual(["chainKey:bytes32", "eid:uint32", "oft:address"]);
   });
 

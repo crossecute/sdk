@@ -3,15 +3,14 @@
 Usage: sync-protocol.py [--check] /path/to/protocol
        sync-protocol.py --revision
 
-The checkout must be the release tag's commit (REVISION) with Forge artifacts built under contracts/evm/out
-and contracts/safe-guard/out. VERSION is the single source for the release: package.json's dependency, the
+The checkout must be at REVISION with the npm package built (npm --prefix npm run build from contracts/evm). VERSION is the single source for the release: package.json's dependency, the
 generated ABI header and `PROTOCOL_VERSION` repeat it, and ts/test/protocolRelease.test.ts compares them.
 `--check` regenerates in memory and fails if any committed file differs; `--revision` prints REVISION for CI.
 """
 import json, pathlib, re, shutil, subprocess, sys
 
-VERSION = '0.3.0'
-REVISION = '554a0dd0b1a419479e587e19a5ebe5b2376e4350'  # the npm-v0.3.0 tag
+VERSION = '0.4.0'
+REVISION = 'df1c6421579aefebf99b0d7510b6bf137b5cd7d9'  # protocol PR #183 package candidate
 root = pathlib.Path(__file__).resolve().parents[1]
 
 # (exported name, Forge profile directory, artifact file, contract)
@@ -20,11 +19,9 @@ ABIS = [
     ('signedReceiverAbi', 'evm', 'SignedReceiver', 'SignedReceiver'),
     ('transceiverExtensionAbi', 'evm', 'TransceiverExtension', 'TransceiverExtension'),
     ('transceiverBaseAbi', 'evm', 'TransceiverBase', 'TransceiverBase'),
-    ('safeBatchExecutorAbi', 'safe-guard', 'SafeBatchExecutor', 'SafeBatchExecutor'),
     ('lzOftConduitFactoryAbi', 'evm', 'LzOftConduitFactory', 'LzOftConduitFactory'),
     ('lzOftTransmitterAbi', 'evm', 'LzOftTransmitter', 'LzOftTransmitter'),
     ('lzOftReceiverAbi', 'evm', 'LzOftReceiver', 'LzOftReceiver'),
-    ('sourceAuthorityGuardAbi', 'safe-guard', 'ISourceAuthorityGuard', 'ISourceAuthorityGuard'),
 ]
 # Functions and events each trimmed ABI keeps: what the builders and the README use, plus the signed-flow
 # views. Inherited access-control, ownership and admin members are dropped. Every custom error is kept so
@@ -32,7 +29,7 @@ ABIS = [
 MEMBERS = {
     'signedTransmitterAbi': {
         'functions': ['sendMessage', 'quoteMessage', 'bootstrap', 'bootstrapPayload', 'payloadForCalls', 'quoteBootstrap',
-                      'quoteMessageSigned', 'quoteRelay', 'quoteAuthority', 'relayLeaf', 'relayAuthority', 'registerRoot',
+                      'quoteMessageSigned', 'quoteLeaf', 'quoteAuthority', 'relayLeaf', 'relayAuthority', 'registerRoot',
                       'isRootRegistered', 'isLeafRelayed', 'isSigned', 'initializeSigned', 'isBootstrapped', 'isBootstrappedOn',
                       'destinationReceiverOn', 'recipientOn', 'owner', 'execute'],
         'events': ['MessageSent', 'LeafRelayed', 'AuthorityRelayed', 'RootRegistered', 'DestinationBootstrapped',
@@ -53,7 +50,7 @@ MEMBERS = {
     'lzOftConduitFactoryAbi': {
         'functions': ['createTransmitter', 'predictConduit', 'conduitSalt', 'predictReceiver', 'bootstrapRoute',
                       'destinationOf', 'isSigned', 'signedConduitBootstrap', 'PROXY_INIT_CODE_HASH', 'localChainKey',
-                      'SIGNED_BOOTSTRAP'],
+                      'SIGNED_BOOTSTRAP', 'transmitterImplementation', 'receiverImplementation', 'treasury'],
         'events': ['TransmitterCreated', 'ReceiverCreated', 'SignedConduitCreated'],
     },
     'lzOftTransmitterAbi': {
@@ -70,6 +67,40 @@ MEMBERS = {
         'events': ['ConduitCreated', 'BootstrapSent'],
     },
 }
+
+
+# Package interfaces take precedence. Implementation artifacts supply provider-specific and inherited members.
+# Library errors also decode reverts bubbled from other components such as the guard.
+INTERFACES = {
+    'signedTransmitterAbi': ['ISignedTransmitter', 'ISignedTransmitterInit'],
+    'signedReceiverAbi': ['ISignedReceiver', 'ISignedReceiverInit', 'IReceiverAuthority'],
+    'lzOftConduitFactoryAbi': ['ILzOftConduitFactory', 'ILzOftSignedConduitFactory'],
+}
+LIBRARY_ERRORS = {
+    'signedTransmitterAbi': ['SignedDispatchCalls', 'DispatchLeaves', 'OrderedMerkle'],
+    'signedReceiverAbi': ['SignedDispatchCalls', 'DispatchLeaves', 'OrderedMerkle'],
+    'lzOftConduitFactoryAbi': ['OrderedMerkle'],
+    'lzOftTransmitterAbi': ['SignedDispatchCalls', 'DispatchLeaves', 'OrderedMerkle'],
+    'lzOftReceiverAbi': ['SignedDispatchCalls', 'DispatchLeaves', 'OrderedMerkle'],
+}
+
+
+def package_abi(protocol, name):
+    return json.loads((protocol / f'contracts/evm/npm/abi/{name}.json').read_text())
+
+
+def merge_abis(*abis):
+    def parameter_type(param):
+        if not param['type'].startswith('tuple'):
+            return param['type']
+        return '(' + ','.join(map(parameter_type, param['components'])) + ')' + param['type'][5:]
+
+    entries = {}
+    for abi in abis:
+        for entry in abi:
+            key = (entry['type'], entry.get('name'), tuple(map(parameter_type, entry.get('inputs', []))))
+            entries.setdefault(key, entry)
+    return list(entries.values())
 
 
 def trim(export, abi):
@@ -153,12 +184,19 @@ def generate(protocol):
     header = f'// Generated by scripts/sync-protocol.py; @crossecute/protocol {VERSION}, protocol {REVISION}.\n'
     abi = header + (
         'export { IConduitTransceiverAbi as conduitTransceiverAbi, '
-        'ICrossecuteGuardAbi as crossecuteGuardAbi } from "@crossecute/protocol/abi";\n'
+        'ICrossecuteGuardAbi as crossecuteGuardAbi, '
+        'ISourceAuthorityGuardAbi as sourceAuthorityGuardAbi, '
+        'SafeBatchExecutorAbi as safeBatchExecutorAbi } from "@crossecute/protocol/abi";\n'
         f'export const PROTOCOL_VERSION = "{VERSION}";\n'
     )
     for export, profile, artifact_file, contract in ABIS:
         artifact = json.loads((protocol / f'contracts/{profile}/out/{artifact_file}.sol/{contract}.json').read_text())
-        abi += 'export const ' + export + ' = ' + json.dumps(trim(export, artifact['abi']), separators=(',', ':')) + ' as const;\n'
+        interfaces = [package_abi(protocol, name) for name in INTERFACES.get(export, [])]
+        errors = [e for name in LIBRARY_ERRORS.get(export, []) for e in package_abi(protocol, name) if e['type'] == 'error']
+        if export in ('lzOftTransmitterAbi', 'lzOftReceiverAbi'):
+            errors += [e for e in package_abi(protocol, 'ILzOftConduitFactory') if e.get('name') == 'PeerChanged']
+        entries = trim(export, merge_abis(*interfaces, errors, artifact['abi']))
+        abi += 'export const ' + export + ' = ' + json.dumps(entries, separators=(',', ':')) + ' as const;\n'
     outputs[root / 'ts/src/signedAbi.ts'] = abi
     return outputs
 
