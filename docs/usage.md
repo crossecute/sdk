@@ -1,7 +1,17 @@
 # SDK usage guide
 
-The [SDK overview](../README.md) explains the workflow. This guide covers setup,
-transaction planning, verification, and Safe-signed dispatch.
+Use Foundry to simulate destination calls and build a Safe transaction on the home chain.
+Give the plan and Safe typed data to the reviewer, who can check that the transaction
+matches the plan before signing.
+
+- [Build a transaction for two destinations](#foundry)
+- [Verify a transaction you received](#verify-a-transaction)
+- [Use the TypeScript API](#typescript)
+- [Reproduce with Forge Attest](#forge-attest)
+- [Build a Safe-signed operation](#safe-signed-dispatch)
+
+To try the CLI with sample files, start with the [offline quickstart](../README.md#verify-a-sample-safe-transaction).
+The sample pair comes from the [Foundry Safe transaction test](../test/SafeTx.t.sol).
 
 ## Install
 
@@ -12,7 +22,7 @@ pnpm add @crossecute/sdk @crossecute/protocol@0.2.0 viem @openzeppelin/contracts
 With npm, use `npm install` with the same packages. The SDK is built against `@crossecute/protocol` 0.2.0, so install
 that version and let both packages resolve one copy.
 
-Foundry remappings:
+Add these Foundry remappings to your project:
 
 ```
 @crossecute/sdk/=node_modules/@crossecute/sdk/contracts/
@@ -26,9 +36,71 @@ scripts never need `ffi`.
 
 ## Foundry
 
-Extend `CrossecuteScript` and run the script with `--fork-url` (or `--rpc-url`) set to the home
-chain.
-[`script/Example.s.sol`](../script/Example.s.sol) is a complete script.
+The [example script](../script/Example.s.sol) simulates transferring ownership of one
+contract on each of two destination chains, then prepares a single transaction for the home
+Safe. The RPC names use Ethereum, Optimism, and Base as examples. Use the networks and
+contract addresses of your own test deployment.
+
+### 1. Set up the project
+
+In a Foundry project with `forge-std` installed, follow the [install instructions](#install)
+and copy the example to `script/Example.s.sol`. Set `fs_permissions` in `foundry.toml`
+to allow writes to `./out`. If you already have permissions configured, add the entry to
+the existing list.
+
+```toml
+[profile.default]
+fs_permissions = [{ access = "write", path = "./out" }]
+```
+
+### 2. Supply the deployment inputs
+
+You need a Crossecute registry and a registered plain-mode transmitter on the home chain.
+The transmitter must be owned by a Safe with a [supported MultiSendCallOnly deployment](#what-foundry-checks).
+On each destination, the Crossecute receiver must own the target contract so it can
+call `transferOwnership`. Choose the new owner address and the Safe nonce you intend to use.
+
+Replace each placeholder before running the example:
+
+```bash
+export MAINNET_RPC_URL='<Ethereum RPC URL>'
+export OPTIMISM_RPC_URL='<Optimism RPC URL>'
+export BASE_RPC_URL='<Base RPC URL>'
+export CROSSECUTE_REGISTRY='<home-chain registry address>'
+export CROSSECUTE_TRANSMITTER='<home-chain transmitter address>'
+export OPTIMISM_TARGET='<Ownable contract address on Optimism>'
+export BASE_TARGET='<Ownable contract address on Base>'
+export NEW_OWNER='<new owner address on both destinations>'
+export SAFE_NONCE='<decimal Safe nonce>'
+```
+
+### 3. Simulate and write the transaction
+
+```bash
+forge script script/Example.s.sol:Example --fork-url "$MAINNET_RPC_URL"
+```
+
+The script runs on forks and writes two files without signing or broadcasting:
+
+| File | Contents |
+| --- | --- |
+| `out/example-plan.json` | The destination calls and the home-chain calls that dispatch them. |
+| `out/example-safe-tx.json` | The unsigned Safe transaction as EIP-712 typed data. |
+
+### 4. Check the outputs
+
+```bash
+pnpm exec crossecute check out/example-plan.json out/example-safe-tx.json
+```
+
+With npm, replace `pnpm exec` with `npm exec --`. Expect one batch for each destination,
+followed by the Safe nonce and hashes.
+Share both files with the reviewer.
+
+### Build your own script
+
+Extend `CrossecuteScript`, register each destination, and add the calls you want
+to simulate. You can also write a Safe Transaction Builder file with `_writeSafeBatch`.
 
 ```solidity
 _useHome(registry, transmitter);                            // the --fork-url chain; verifies the conduit
@@ -37,13 +109,14 @@ uint256 optimism = _useDestination(vm.envString("OPTIMISM_RPC_URL"));
 _add(optimism, calls, new bytes[](0));                      // simulated as the receiver there
 Plan memory plan = _plan();                                 // the owner's calls, run once as a check
 
-_writeSafeTx(plan, nonce, "out/safe-tx.json");              // EIP-712 typed data for the owner Safe
-_writePlan(plan, "out/plan.json");                          // batches and calls, for `crossecute check`
-_writeSafeBatch(plan, "out/batch.json");                    // Safe Transaction Builder file
-_broadcast(plan);                                           // owner is an EOA and the script's signer
+_writePlan(plan, "out/example-plan.json");
+_writeSafeTx(plan, nonce, "out/example-safe-tx.json");
 ```
 
-What it checks:
+Use `_broadcast(plan)` when the transmitter owner is an EOA and that account is the
+script signer.
+
+### What Foundry checks
 
 - **The conduit.** `_useHome` reverts unless the registry's `predictTransceiver` for the
   transmitter's provider on this chain is the transmitter's transceiver, and that
@@ -89,6 +162,19 @@ What it checks:
   must not be below the Safe's. The SDK computes the `safeTxHash` itself and reverts unless the
   Safe's own `getTransactionHash` agrees. It logs the domain hash, message hash and
   `safeTxHash`.
+
+## Verify a transaction
+
+Use the plan and Safe typed-data files exported by the operator:
+
+```bash
+pnpm exec crossecute check plan.json safe-tx.json
+```
+
+For npm, run `npm exec -- crossecute check plan.json safe-tx.json`.
+Review the planned calls, then compare the printed `safeTxHash` with the hash shown
+by your signer. The CLI checks the files locally. Use the [Foundry walkthrough](#foundry)
+to simulate the calls against chain state.
 
 ## Forge Attest
 
@@ -154,14 +240,19 @@ throws if the calldata differs.
 the owner Safe's domain on the home chain, no gas refund, and the plan's call directly or all
 of its calls through a known MultiSendCallOnly.
 
-```bash
-pnpm exec crossecute check out/plan.json out/safe-tx.json
+```ts
+import { readFileSync } from "node:fs";
+import { checkPlan, checkSafeTx, parsePlan, parseSafeTxTypedData, safeTxHashes } from "@crossecute/sdk";
+
+const plan = parsePlan(readFileSync("plan.json", "utf8"));
+const safeTx = parseSafeTxTypedData(readFileSync("safe-tx.json", "utf8"));
+checkPlan(plan);
+checkSafeTx(plan, safeTx);
+console.log(safeTxHashes(safeTx).safeTxHash);
 ```
 
-The command prints the batches, then the domain hash, message hash and `safeTxHash` a signer's
-device shows. Its only runtime dependency is `@crossecute/protocol`. viem is a peer dependency
-(`^2.57.18`), so a frontend keeps the single copy it already has.
-In an npm project, run the installed CLI with `npx crossecute check out/plan.json out/safe-tx.json`.
+This example works with the [quickstart files](../examples/verify-safe-tx) or your
+own pair. The SDK depends on `@crossecute/protocol` and uses viem as a peer dependency.
 
 ## Development
 
