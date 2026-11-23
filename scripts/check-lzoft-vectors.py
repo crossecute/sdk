@@ -5,7 +5,7 @@ Usage: check-lzoft-vectors.py /path/to/protocol
 Writes a Forge script into the checkout's contracts/evm/script, runs it, and removes it, so use a checkout
 that can be touched (CI's, or a copy). The script rebuilds each destination leaf hash, the root of every listed
 prefix of the destinations, the options attribute selector, the factory's conduitSalt and predictConduit, the
-Proxy initcode hash and the createTransmitter calldata with protocol's LzOftMessage, LzMessage and
+Proxy initcode hash and the createTransmitter calldata with protocol's LzOftConduitAddress, LzMessage and
 LzOftConduitFactory, and reverts on any difference from the SDK's vectors. protocol has no literal OFT vectors
 of its own to copy. Every value is matched against a strict format before it is written into Solidity.
 """
@@ -86,12 +86,14 @@ def source(v, pins):
     body = []
     for i, (key, eid, oft, leaf_hash) in enumerate(f['destinations']):
         body += [
-            f"        leaves[{i}] = LzOftConduitFactory.Leaf({key}, {eid}, {oft});",
-            f"        hashes[{i}] = LzOftMessage.leaf(leaves[{i}].chainKey, leaves[{i}].eid, leaves[{i}].oft);",
-            f"        require(hashes[{i}] == {leaf_hash}, 'leaf {i}');",
+            f"        destinations[{i}] = ILzOftConduitFactory.Destination({key}, {eid}, {oft});",
+            f"        require(LzOftConduitAddress.leafHash(destinations[{i}]) == {leaf_hash}, 'leaf {i}');",
         ]
     for count, expected in f['roots'].items():
-        body.append(f"        require(LzOftMessage.root(_prefix(hashes, {count})) == {expected}, 'root {count}');")
+        body.append(
+            f"        require(LzOftConduitAddress.destRoot(_prefix(destinations, {count}), "
+            f"{f['homeKey']}, {f['homeEid']}) == {expected}, 'root {count}');"
+        )
     n, total = f['count'], len(f['destinations'])
     fields = f"{f['owner']}, {f['salt']}, {f['homeKey']}, {f['homeEid']}, {f['homeOft']}"
     return f'''// SPDX-License-Identifier: MIT
@@ -99,7 +101,8 @@ pragma solidity ^0.8.20;
 
 import {{Script}} from "forge-std/Script.sol";
 import {{LzOftConduitFactory}} from "src/protocols/layerzero/LzOftConduitFactory.sol";
-import {{LzOftMessage}} from "src/protocols/layerzero/LzOftMessage.sol";
+import {{ILzOftConduitFactory}} from "src/protocols/layerzero/ILzOftConduitFactory.sol";
+import {{LzOftConduitAddress}} from "src/protocols/layerzero/LzOftConduitAddress.sol";
 import {{LzMessage}} from "src/protocols/layerzero/LzMessage.sol";
 
 contract Impl {{
@@ -107,26 +110,28 @@ contract Impl {{
 }}
 
 contract {NAME} is Script {{
-    function _prefix(bytes32[] memory all, uint256 n) internal pure returns (bytes32[] memory out) {{
-        out = new bytes32[](n);
+    function _prefix(ILzOftConduitFactory.Destination[] memory all, uint256 n)
+        internal
+        pure
+        returns (ILzOftConduitFactory.Destination[] memory out)
+    {{
+        out = new ILzOftConduitFactory.Destination[](n);
         for (uint256 i; i < n; ++i) out[i] = all[i];
     }}
 
     function run() external {{
-        LzOftConduitFactory.Leaf[] memory leaves = new LzOftConduitFactory.Leaf[]({total});
-        bytes32[] memory hashes = new bytes32[]({total});
+        ILzOftConduitFactory.Destination[] memory destinations = new ILzOftConduitFactory.Destination[]({total});
 {chr(10).join(body)}
         require(bytes4(LzMessage.OPTIONS_ATTRIBUTE) == {f['selector']}, 'options attribute');
         address f = {f['factory']};
         vm.etch(f, address(new LzOftConduitFactory(address(new Impl()), address(new Impl()), address(uint160(0x7ea5)))).code);
         LzOftConduitFactory factory = LzOftConduitFactory(f);
         require(factory.PROXY_INIT_CODE_HASH() == {f['proxyHash']}, 'proxy initcode hash');
-        bytes32 destRoot = LzOftMessage.root(_prefix(hashes, {n}));
+        ILzOftConduitFactory.Destination[] memory used = _prefix(destinations, {n});
+        bytes32 destRoot = LzOftConduitAddress.destRoot(used, {f['homeKey']}, {f['homeEid']});
         require(factory.conduitSalt({fields}, destRoot) == {f['conduitSalt']}, 'conduitSalt');
         require(factory.predictConduit({fields}, destRoot) == {f['conduit']}, 'predictConduit');
-        LzOftConduitFactory.Leaf[] memory used = new LzOftConduitFactory.Leaf[]({n});
-        for (uint256 i; i < {n}; ++i) used[i] = leaves[i];
-        bytes memory data = abi.encodeCall(LzOftConduitFactory.createTransmitter, ({f['salt']}, {f['homeOft']}, used));
+        bytes memory data = abi.encodeCall(ILzOftConduitFactory.createTransmitter, ({f['salt']}, {f['homeOft']}, used));
         require(keccak256(data) == keccak256(hex"{f['createData']}"), 'createTransmitter');
     }}
 }}
