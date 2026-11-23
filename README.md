@@ -8,8 +8,7 @@ flowchart LR
     Sim --> Tx["Build one Safe transaction"] --> Check["Check against the plan"]
 ```
 
-The SDK targets `@crossecute/protocol` 0.4.0. Signed relayers use `quoteLeaf` with `relayLeaf`.
-LayerZero OFT creation commits to destination records and derives the destination root with `OrderedMerkle`.
+The SDK targets `@crossecute/protocol` 0.4.0.
 
 ## Verify a sample Safe transaction
 
