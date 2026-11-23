@@ -60,7 +60,7 @@ contract MerklePackageJsonTest is Test, MerkleFixtures {
         assertEq(MerklePackages.registerData(pkg), SignedDispatch.registerData(pkg.root));
     }
 
-    function test_registerRootComposesIntoSafeTypedData() public view {
+    function test_registerRootComposesIntoSafeTypedData() public pure {
         MerklePackage memory pkg = MerklePackages.build(guardExecutionLeaves(3), guardReceiverNonces());
         address transmitter = address(0xa11ce);
         SafeTx memory t = SignedDispatch.transaction(transmitter, 5, MerklePackages.registerData(pkg), 0);
