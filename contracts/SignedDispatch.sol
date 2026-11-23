@@ -14,6 +14,7 @@ import {ISignedTransmitter} from "@crossecute/protocol/messaging/outbound/ISigne
 import {ISignedReceiver} from "@crossecute/protocol/messaging/inbound/ISignedReceiver.sol";
 import {ICrossecuteGuard} from "@crossecute/protocol/safe-guard/ICrossecuteGuard.sol";
 import {IERC7786GatewaySource} from "@crossecute/protocol/messaging/IErc7786.sol";
+import {OrderedMerkle} from "@crossecute/protocol/messaging/OrderedMerkle.sol";
 import {Payload} from "@crossecute/protocol/messaging/Payload.sol";
 
 /// @notice Foundry builders for the protocol's signed dispatch. Does not collect or authenticate signatures,
@@ -30,12 +31,14 @@ library SignedDispatch {
 
     /// @notice Ordered tree with sorted sibling hashing and odd-node promotion, matching the guard.
     function root(bytes[] memory leaves) internal pure returns (bytes32 treeRoot) {
-        (treeRoot,) = tree(leaves, 0);
+        return OrderedMerkle.root(_hashLeaves(leaves));
     }
 
     /// @notice Sibling hashes proving `leaves[index]`; empty for a one-leaf tree.
     function proof(bytes[] memory leaves, uint256 index) internal pure returns (bytes32[] memory siblings) {
-        (, siblings) = tree(leaves, index);
+        if (leaves.length == 0) revert NoLeaves();
+        if (index >= leaves.length) revert IndexOutOfRange();
+        return OrderedMerkle.proof(_hashLeaves(leaves), index);
     }
 
     function tree(bytes[] memory leaves, uint256 index)
@@ -43,42 +46,25 @@ library SignedDispatch {
         pure
         returns (bytes32 treeRoot, bytes32[] memory siblings)
     {
-        bytes32[] memory level = new bytes32[](leaves.length);
-        for (uint256 i; i < leaves.length; ++i) {
-            level[i] = keccak256(abi.encode(keccak256(leaves[i])));
-        }
-        return treeOfHashes(level, index);
+        return treeOfHashes(_hashLeaves(leaves), index);
     }
 
-    /// @notice `tree` over leaf hashes already computed. `level` is overwritten level by level, so the caller
-    ///         passes a copy it no longer needs.
-    function treeOfHashes(bytes32[] memory level, uint256 index)
+    /// @notice `tree` over precomputed leaf hashes. Preserves the supplied hashes.
+    function treeOfHashes(bytes32[] memory hashes, uint256 index)
         internal
         pure
         returns (bytes32 treeRoot, bytes32[] memory siblings)
     {
-        if (level.length == 0) revert NoLeaves();
-        if (index >= level.length) revert IndexOutOfRange();
-        siblings = new bytes32[](64);
-        uint256 depth;
-        uint256 count = level.length;
-        while (count > 1) {
-            if ((index ^ 1) < count) siblings[depth++] = level[index ^ 1];
-            for (uint256 i; i < count; i += 2) {
-                if (i + 1 == count) {
-                    level[i / 2] = level[i];
-                } else {
-                    (bytes32 a, bytes32 b) = (level[i], level[i + 1]);
-                    level[i / 2] = a < b ? keccak256(abi.encodePacked(a, b)) : keccak256(abi.encodePacked(b, a));
-                }
-            }
-            count = (count + 1) / 2;
-            index >>= 1;
+        treeRoot = OrderedMerkle.root(hashes);
+        if (index >= hashes.length) revert IndexOutOfRange();
+        siblings = OrderedMerkle.proof(hashes, index);
+    }
+
+    function _hashLeaves(bytes[] memory leaves) private pure returns (bytes32[] memory hashes) {
+        hashes = new bytes32[](leaves.length);
+        for (uint256 i; i < leaves.length; ++i) {
+            hashes[i] = OrderedMerkle.leafHash(leaves[i]);
         }
-        assembly ("memory-safe") {
-            mstore(siblings, depth)
-        }
-        treeRoot = level[0];
     }
 
     function sendMessageCalldataSigned(bytes memory destination, bytes memory calls, bytes[] memory attributes)

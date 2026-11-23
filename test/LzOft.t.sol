@@ -3,15 +3,16 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {ChainKey} from "@crossecute/protocol/addressing/ChainKey.sol";
-import {ILzOftCreate, LzOft} from "../contracts/LzOft.sol";
+import {LzOft} from "../contracts/LzOft.sol";
+import {ILzOftConduitFactory} from "@crossecute/protocol/protocols/layerzero/ILzOftConduitFactory.sol";
 
 /// @dev External wrappers so `vm.expectRevert` sees the library's reverts.
 contract LzOftHarness {
-    function root(ILzOftCreate.Leaf[] memory leaves) external pure returns (bytes32) {
+    function root(ILzOftConduitFactory.Destination[] memory leaves) external pure returns (bytes32) {
         return LzOft.root(leaves);
     }
 
-    function rootFor(ILzOftCreate.Leaf[] memory leaves, bytes32 homeChainKey, uint32 homeEid)
+    function rootFor(ILzOftConduitFactory.Destination[] memory leaves, bytes32 homeChainKey, uint32 homeEid)
         external
         pure
         returns (bytes32)
@@ -23,7 +24,7 @@ contract LzOftHarness {
         return LzOft.optionsAttribute(rawOptions);
     }
 
-    function createData(bytes32 salt, address homeOft, ILzOftCreate.Leaf[] memory leaves)
+    function createData(bytes32 salt, address homeOft, ILzOftConduitFactory.Destination[] memory leaves)
         external
         pure
         returns (bytes memory)
@@ -57,13 +58,17 @@ contract LzOftTest is Test {
     }
 
     /// @dev The destinations in ascending `chainKey` order, as the factory requires.
-    function _sorted() internal pure returns (ILzOftCreate.Leaf[] memory leaves, uint256[] memory chainIds) {
-        leaves = new ILzOftCreate.Leaf[](DESTINATIONS);
+    function _sorted()
+        internal
+        pure
+        returns (ILzOftConduitFactory.Destination[] memory leaves, uint256[] memory chainIds)
+    {
+        leaves = new ILzOftConduitFactory.Destination[](DESTINATIONS);
         chainIds = new uint256[](DESTINATIONS);
         for (uint256 i; i < DESTINATIONS; ++i) {
             // forge-lint: disable-next-line(unsafe-typecast) a small index
             address oft = address(uint160(0xD0F7000 + i));
-            leaves[i] = ILzOftCreate.Leaf(ChainKey.forEvm(_chainIds()[i]), _eids()[i], oft);
+            leaves[i] = ILzOftConduitFactory.Destination(ChainKey.forEvm(_chainIds()[i]), _eids()[i], oft);
             chainIds[i] = _chainIds()[i];
             for (uint256 j = i; j > 0 && leaves[j].chainKey < leaves[j - 1].chainKey; --j) {
                 (leaves[j], leaves[j - 1]) = (leaves[j - 1], leaves[j]);
@@ -72,12 +77,12 @@ contract LzOftTest is Test {
         }
     }
 
-    function _prefix(ILzOftCreate.Leaf[] memory leaves, uint256 count)
+    function _prefix(ILzOftConduitFactory.Destination[] memory leaves, uint256 count)
         internal
         pure
-        returns (ILzOftCreate.Leaf[] memory out)
+        returns (ILzOftConduitFactory.Destination[] memory out)
     {
-        out = new ILzOftCreate.Leaf[](count);
+        out = new ILzOftConduitFactory.Destination[](count);
         for (uint256 i; i < count; ++i) {
             out[i] = leaves[i];
         }
@@ -104,12 +109,12 @@ contract LzOftTest is Test {
     }
 
     function test_aSingleLeafIsItsOwnRoot() public pure {
-        (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
+        (ILzOftConduitFactory.Destination[] memory leaves,) = _sorted();
         assertEq(LzOft.root(_prefix(leaves, 1)), LzOft.leafHash(leaves[0]));
     }
 
     function test_theRootPairsWithTheSortedHashAndCarriesAnOddLeafUp() public pure {
-        (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
+        (ILzOftConduitFactory.Destination[] memory leaves,) = _sorted();
         bytes32 a = LzOft.leafHash(leaves[0]);
         bytes32 b = LzOft.leafHash(leaves[1]);
         bytes32 c = LzOft.leafHash(leaves[2]);
@@ -120,54 +125,54 @@ contract LzOftTest is Test {
     }
 
     function test_theLeafIsHashedTwice() public pure {
-        (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
-        ILzOftCreate.Leaf memory l = leaves[0];
+        (ILzOftConduitFactory.Destination[] memory leaves,) = _sorted();
+        ILzOftConduitFactory.Destination memory l = leaves[0];
         assertNotEq(LzOft.leafHash(l), keccak256(abi.encode(l.chainKey, l.eid, l.oft)));
     }
 
     function test_noLeavesAreRefused() public {
-        vm.expectRevert(LzOft.NoDestinations.selector);
-        h.root(new ILzOftCreate.Leaf[](0));
+        vm.expectRevert(ILzOftConduitFactory.NoDestinations.selector);
+        h.root(new ILzOftConduitFactory.Destination[](0));
     }
 
     function test_unsortedAndRepeatedLeavesAreRefused() public {
-        (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
-        ILzOftCreate.Leaf[] memory two = _prefix(leaves, 2);
+        (ILzOftConduitFactory.Destination[] memory leaves,) = _sorted();
+        ILzOftConduitFactory.Destination[] memory two = _prefix(leaves, 2);
         (two[0], two[1]) = (two[1], two[0]);
-        vm.expectRevert(abi.encodeWithSelector(LzOft.LeavesNotSorted.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.DestinationsNotSorted.selector, 1));
         h.root(two);
-        vm.expectRevert(abi.encodeWithSelector(LzOft.LeavesNotSorted.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.DestinationsNotSorted.selector, 1));
         h.createData(SALT, HOME_OFT, two);
 
         two[1] = two[0];
-        vm.expectRevert(abi.encodeWithSelector(LzOft.LeavesNotSorted.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.DestinationsNotSorted.selector, 1));
         h.root(two);
     }
 
     function test_aZeroEidOrOftIsRefused() public {
-        (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
-        ILzOftCreate.Leaf[] memory one = _prefix(leaves, 1);
+        (ILzOftConduitFactory.Destination[] memory leaves,) = _sorted();
+        ILzOftConduitFactory.Destination[] memory one = _prefix(leaves, 1);
         one[0].eid = 0;
-        vm.expectRevert(abi.encodeWithSelector(LzOft.BadLeaf.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.BadDestination.selector, 0));
         h.root(one);
         one[0].eid = 1;
         one[0].oft = address(0);
-        vm.expectRevert(abi.encodeWithSelector(LzOft.BadLeaf.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.BadDestination.selector, 0));
         h.root(one);
     }
 
     function test_aLeafForTheHomeChainOrEidIsRefused() public {
-        (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
-        ILzOftCreate.Leaf[] memory two = _prefix(leaves, 2);
+        (ILzOftConduitFactory.Destination[] memory leaves,) = _sorted();
+        ILzOftConduitFactory.Destination[] memory two = _prefix(leaves, 2);
         h.rootFor(two, ChainKey.forEvm(HOME_CHAIN_ID), HOME_EID);
-        vm.expectRevert(abi.encodeWithSelector(LzOft.BadLeaf.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.BadDestination.selector, 1));
         h.rootFor(two, two[1].chainKey, HOME_EID);
-        vm.expectRevert(abi.encodeWithSelector(LzOft.BadLeaf.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(ILzOftConduitFactory.BadDestination.selector, 0));
         h.rootFor(two, ChainKey.forEvm(HOME_CHAIN_ID), two[0].eid);
     }
 
     function test_theCreationDataIsTheFactorysCall() public pure {
-        (ILzOftCreate.Leaf[] memory leaves,) = _sorted();
+        (ILzOftConduitFactory.Destination[] memory leaves,) = _sorted();
         bytes memory data = LzOft.createTransmitterCalldata(SALT, HOME_OFT, _prefix(leaves, 3));
         assertEq(bytes4(data), bytes4(keccak256("createTransmitter(bytes32,address,(bytes32,uint32,address)[])")));
     }
@@ -197,7 +202,7 @@ contract LzOftTest is Test {
         assertNotEq(base, LzOft.predictConduit(FACTORY, OWNER, SALT, key, HOME_EID, HOME_OFT, root, bytes32(0)));
     }
 
-    function _destinationsJson(ILzOftCreate.Leaf[] memory leaves, uint256[] memory chainIds)
+    function _destinationsJson(ILzOftConduitFactory.Destination[] memory leaves, uint256[] memory chainIds)
         internal
         pure
         returns (string memory out)
@@ -223,7 +228,7 @@ contract LzOftTest is Test {
         return string.concat(out, "]");
     }
 
-    function _rootsJson(ILzOftCreate.Leaf[] memory leaves) internal pure returns (string memory out) {
+    function _rootsJson(ILzOftConduitFactory.Destination[] memory leaves) internal pure returns (string memory out) {
         // Shapes whose levels carry an odd node up: 3, 5, 9 and 11 at one or more levels, and a full tree of 8.
         uint256[8] memory counts = [uint256(1), 2, 3, 4, 5, 8, 9, 11];
         out = "{";
@@ -259,8 +264,12 @@ contract LzOftTest is Test {
     }
 
     /// @dev The conduit of the first `CONDUIT_LEAVES` destinations, which `LzOft.root` checks against the home too.
-    function _conduitJson(ILzOftCreate.Leaf[] memory leaves, bytes32 homeKey) internal pure returns (string memory) {
-        ILzOftCreate.Leaf[] memory used = _prefix(leaves, CONDUIT_LEAVES);
+    function _conduitJson(ILzOftConduitFactory.Destination[] memory leaves, bytes32 homeKey)
+        internal
+        pure
+        returns (string memory)
+    {
+        ILzOftConduitFactory.Destination[] memory used = _prefix(leaves, CONDUIT_LEAVES);
         bytes32 destRoot = LzOft.root(used, homeKey, HOME_EID);
         return string.concat(
             '"createData":"',
@@ -278,7 +287,7 @@ contract LzOftTest is Test {
     }
 
     function test_writeLzOftVectors() public {
-        (ILzOftCreate.Leaf[] memory leaves, uint256[] memory chainIds) = _sorted();
+        (ILzOftConduitFactory.Destination[] memory leaves, uint256[] memory chainIds) = _sorted();
         bytes32 homeKey = ChainKey.forEvm(HOME_CHAIN_ID);
         string memory json = string.concat(
             '{"options":"',
