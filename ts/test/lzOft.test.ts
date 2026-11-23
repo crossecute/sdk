@@ -4,8 +4,8 @@ import { type Address, type Hex, decodeFunctionData, getAddress, keccak256, stri
 import { chainKey } from "../src/encoding.js";
 import * as sdk from "../src/index.js";
 import {
-  LZ_OFT_PROXY_INIT_CODE_HASH, LZ_OPTIONS_ATTRIBUTE, requireLzOftLeaves, createLzOftTransmitterCalldata, lzOftConduitSalt,
-  lzOftCreateTx, lzOftLeafHash, lzOftLeaves, lzOftRoot, lzOptionsAttribute, predictLzOftConduit, type LzOftLeaf,
+  LZ_OFT_PROXY_INIT_CODE_HASH, LZ_OPTIONS_ATTRIBUTE, requireLzOftDestinations, createLzOftTransmitterCalldata, lzOftConduitSalt,
+  lzOftCreateTx, lzOftLeafHash, lzOftDestinations, lzOftRoot, lzOptionsAttribute, predictLzOftConduit, type LzOftDestination,
 } from "../src/lzOft.js";
 import { lzOftConduitFactoryAbi, signedTransmitterAbi } from "../src/signedAbi.js";
 
@@ -16,7 +16,7 @@ const vector = read("vectors/lzoft.json") as {
   home: { owner: Address; salt: Hex; chainId: string; chainKey: Hex; eid: number; oft: Address };
 };
 const pins = read("vectors/lzoft-protocol.json");
-const leaves: LzOftLeaf[] = vector.destinations.map((d) => ({ chainKey: d.chainKey, eid: d.eid, oft: d.oft }));
+const leaves: LzOftDestination[] = vector.destinations.map((d) => ({ chainKey: d.chainKey, eid: d.eid, oft: d.oft }));
 const home = { chainKey: vector.home.chainKey, eid: vector.home.eid };
 const fields = { owner: vector.home.owner, salt: vector.home.salt, homeChainKey: vector.home.chainKey, homeEid: vector.home.eid, homeOft: vector.home.oft };
 const conduitLeaves = leaves.slice(0, vector.conduitLeaves);
@@ -59,8 +59,8 @@ describe("destination leaves and root against the Solidity builders", () => {
   });
   it("order destinations by chain key, whatever order they are given in", () => {
     const destinations = vector.destinations.map((d) => ({ chainId: BigInt(d.chainId), eid: d.eid, oft: d.oft }));
-    expect(lzOftLeaves(destinations)).toEqual(leaves);
-    expect(lzOftLeaves([...destinations].reverse())).toEqual(leaves);
+    expect(lzOftDestinations(destinations)).toEqual(leaves);
+    expect(lzOftDestinations([...destinations].reverse())).toEqual(leaves);
     expect(destinations.map((d) => d.chainId)).not.toEqual([...destinations.map((d) => d.chainId)].sort((a, b) => (a < b ? -1 : 1)));
     expect(leaves.map((l) => l.chainKey)).toEqual(destinations.map((d) => chainKey(d.chainId)));
   });
@@ -78,26 +78,26 @@ describe("leaf checks", () => {
   const [a, b] = leaves;
   it("refuse no leaves", () => expect(() => lzOftRoot([])).toThrow("NoDestinations"));
   it("refuse unsorted leaves", () => {
-    expect(() => lzOftRoot([b, a])).toThrow("LeavesNotSorted(1)");
-    expect(() => createLzOftTransmitterCalldata(fields.salt, fields.homeOft, [b, a])).toThrow("LeavesNotSorted(1)");
+    expect(() => lzOftRoot([b, a])).toThrow("DestinationsNotSorted(1)");
+    expect(() => createLzOftTransmitterCalldata(fields.salt, fields.homeOft, [b, a])).toThrow("DestinationsNotSorted(1)");
   });
   it("refuse a repeated chain key", () => {
-    expect(() => lzOftRoot([a, a])).toThrow("LeavesNotSorted(1)");
-    expect(() => lzOftRoot([a, { ...a, eid: a.eid + 1 }])).toThrow("LeavesNotSorted(1)");
-    expect(() => lzOftLeaves([{ chainId: 10n, eid: 1, oft: a.oft }, { chainId: 10n, eid: 2, oft: b.oft }])).toThrow("LeavesNotSorted(1)");
+    expect(() => lzOftRoot([a, a])).toThrow("DestinationsNotSorted(1)");
+    expect(() => lzOftRoot([a, { ...a, eid: a.eid + 1 }])).toThrow("DestinationsNotSorted(1)");
+    expect(() => lzOftDestinations([{ chainId: 10n, eid: 1, oft: a.oft }, { chainId: 10n, eid: 2, oft: b.oft }])).toThrow("DestinationsNotSorted(1)");
   });
   it("refuse a zero or out of range eid, a zero OFT and a malformed key", () => {
-    expect(() => requireLzOftLeaves([{ ...a, eid: 0 }])).toThrow("BadLeaf(0)");
-    expect(() => requireLzOftLeaves([{ ...a, eid: 2 ** 32 }])).toThrow("BadLeaf(0)");
-    expect(() => requireLzOftLeaves([{ ...a, eid: 1.5 }])).toThrow("BadLeaf(0)");
-    expect(() => requireLzOftLeaves([a, { ...b, oft: zeroAddress }])).toThrow("BadLeaf(1)");
-    expect(() => requireLzOftLeaves([{ ...a, chainKey: "0x01" }])).toThrow("BadLeaf(0)");
+    expect(() => requireLzOftDestinations([{ ...a, eid: 0 }])).toThrow("BadDestination(0)");
+    expect(() => requireLzOftDestinations([{ ...a, eid: 2 ** 32 }])).toThrow("BadDestination(0)");
+    expect(() => requireLzOftDestinations([{ ...a, eid: 1.5 }])).toThrow("BadDestination(0)");
+    expect(() => requireLzOftDestinations([a, { ...b, oft: zeroAddress }])).toThrow("BadDestination(1)");
+    expect(() => requireLzOftDestinations([{ ...a, chainKey: "0x01" }])).toThrow("BadDestination(0)");
   });
   it("refuse the home chain and the home's eid when the home is given", () => {
-    expect(() => requireLzOftLeaves([a, b], home)).not.toThrow();
-    expect(() => requireLzOftLeaves([a, b], { ...home, chainKey: b.chainKey })).toThrow("BadLeaf(1)");
-    expect(() => requireLzOftLeaves([a, b], { ...home, eid: a.eid })).toThrow("BadLeaf(0)");
-    expect(() => lzOftLeaves([{ chainId: BigInt(vector.home.chainId), eid: 7, oft: a.oft }], home)).toThrow("BadLeaf(0)");
+    expect(() => requireLzOftDestinations([a, b], home)).not.toThrow();
+    expect(() => requireLzOftDestinations([a, b], { ...home, chainKey: b.chainKey })).toThrow("BadDestination(1)");
+    expect(() => requireLzOftDestinations([a, b], { ...home, eid: a.eid })).toThrow("BadDestination(0)");
+    expect(() => lzOftDestinations([{ chainId: BigInt(vector.home.chainId), eid: 7, oft: a.oft }], home)).toThrow("BadDestination(0)");
   });
 });
 

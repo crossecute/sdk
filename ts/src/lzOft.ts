@@ -1,7 +1,8 @@
 import {
-  type Address, type Hex, concat, encodeAbiParameters, encodeFunctionData, getCreate2Address, isAddress, isHex,
-  keccak256, size, slice, stringToHex, zeroAddress,
+  type Address, type ContractFunctionArgs, type Hex, concat, encodeAbiParameters, encodeFunctionData, getCreate2Address, isAddress, isHex,
+  keccak256, size, slice, stringToHex, zeroAddress, zeroHash,
 } from "viem";
+import { ILzOftConduitFactoryAbi } from "@crossecute/protocol/abi";
 import { chainKey } from "./encoding.js";
 import { type SafeTxEnvelope } from "./safeTx.js";
 import { dispatchLeafHash, dispatchTreeFromHashes, signedDispatchTx } from "./signed.js";
@@ -17,10 +18,10 @@ export const LZ_OPTIONS_ATTRIBUTE: Hex = slice(keccak256(stringToHex("crossecute
 export const LZ_OFT_PROXY_INIT_CODE_HASH: Hex = "0x825940f5905807e2b38780497d34b22480ffdb4cd09cdfd4720a194910beada6";
 
 /** One destination of a conduit: its chain key, the endpoint id of that chain and the home OFT's peer there. */
-export type LzOftLeaf = { chainKey: Hex; eid: number; oft: Address };
-/** A destination named by chain id, for `lzOftLeaves`. */
-export type LzOftDestination = { chainId: bigint; eid: number; oft: Address };
-/** The home chain's key and eid, for the checks that compare a leaf with the home. */
+export type LzOftDestination = ContractFunctionArgs<typeof ILzOftConduitFactoryAbi, "nonpayable", "createTransmitter">[2][number];
+/** A destination named by chain id, for `lzOftDestinations`. */
+export type LzOftDestinationInput = { chainId: bigint; eid: number; oft: Address };
+/** The home chain's key and eid, for the checks that compare a destination with the home. */
 export type LzOftHome = { chainKey: Hex; eid: number };
 
 const leafType = [{ type: "bytes32" }, { type: "uint32" }, { type: "address" }] as const;
@@ -39,62 +40,59 @@ export function lzOptionsAttribute(rawOptions: Hex): Hex {
   return concat([LZ_OPTIONS_ATTRIBUTE, rawOptions]);
 }
 
-/** `LzOftMessage.leaf`. */
-export function lzOftLeafHash(leaf: LzOftLeaf): Hex {
-  return dispatchLeafHash(encodeAbiParameters(leafType, [leaf.chainKey, leaf.eid, leaf.oft]));
+/** The destination leaf hash computed by `LzOftConduitAddress.leafHash`. */
+export function lzOftLeafHash(destination: LzOftDestination): Hex {
+  return dispatchLeafHash(encodeAbiParameters(leafType, [destination.chainKey, destination.eid, destination.oft]));
 }
 
-/**
- * The factory's `_checkLeaves` without the checks that read the home OFT's peers: at least one leaf, strictly
- * ascending `chainKey` (a repeat is refused too), and a nonzero eid and OFT. With `home`, no leaf may name the
- * home chain or the home's eid. Messages name the factory's errors.
- */
-export function requireLzOftLeaves(leaves: readonly LzOftLeaf[], home?: LzOftHome): void {
-  if (!leaves.length) throw new Error("NoDestinations");
-  leaves.forEach((l, i) => {
-    if (!isHex(l.chainKey) || size(l.chainKey) !== 32) throw new Error(`BadLeaf(${i}): chain key is not 32 bytes`);
-    if (i && BigInt(l.chainKey) <= BigInt(leaves[i - 1].chainKey)) throw new Error(`LeavesNotSorted(${i})`);
-    if (!Number.isInteger(l.eid) || l.eid <= 0 || l.eid > UINT32_MAX) throw new Error(`BadLeaf(${i}): eid`);
-    if (!isAddress(l.oft, { strict: false }) || l.oft === zeroAddress) throw new Error(`BadLeaf(${i}): oft`);
-    if (home && (BigInt(l.chainKey) === BigInt(home.chainKey) || l.eid === home.eid)) throw new Error(`BadLeaf(${i}): the home`);
+/** Check the ordering, endpoint IDs and addresses that the factory can validate without reading its peers. */
+export function requireLzOftDestinations(destinations: readonly LzOftDestination[], home?: LzOftHome): void {
+  if (!destinations.length) throw new Error("NoDestinations");
+  destinations.forEach((destination, i) => {
+    if (!isHex(destination.chainKey) || size(destination.chainKey) !== 32) {
+      throw new Error(`BadDestination(${i}): chain key is not 32 bytes`);
+    }
+    const key = BigInt(destination.chainKey);
+    if (i && key <= BigInt(destinations[i - 1].chainKey)) throw new Error(`DestinationsNotSorted(${i})`);
+    if (!Number.isInteger(destination.eid) || destination.eid <= 0 || destination.eid > UINT32_MAX) {
+      throw new Error(`BadDestination(${i}): eid`);
+    }
+    if (!isAddress(destination.oft, { strict: false }) || destination.oft === zeroAddress) {
+      throw new Error(`BadDestination(${i}): oft`);
+    }
+    if (key === BigInt(home?.chainKey ?? zeroHash) || (home && destination.eid === home.eid)) {
+      throw new Error(`BadDestination(${i}): home or reserved chain key`);
+    }
   });
 }
 
-/**
- * Leaves for `destinations` in the ascending `chainKey` order the factory requires. Chain keys are hashes, so the
- * order is not the chain id order. Two destinations on one chain are rejected.
- */
-export function lzOftLeaves(destinations: readonly LzOftDestination[], home?: LzOftHome): LzOftLeaf[] {
-  const leaves = destinations
+/** Resolve chain IDs to chain keys and sort the destination records by ascending chain key. */
+export function lzOftDestinations(inputs: readonly LzOftDestinationInput[], home?: LzOftHome): LzOftDestination[] {
+  const destinations = inputs
     .map((d) => ({ chainKey: chainKey(d.chainId), eid: d.eid, oft: d.oft }))
     .sort((a, b) => (BigInt(a.chainKey) < BigInt(b.chainKey) ? -1 : BigInt(a.chainKey) > BigInt(b.chainKey) ? 1 : 0));
-  requireLzOftLeaves(leaves, home);
-  return leaves;
+  requireLzOftDestinations(destinations, home);
+  return destinations;
+}
+
+/** The factory's destination root over destination leaf hashes in ascending chain-key order. */
+export function lzOftRoot(destinations: readonly LzOftDestination[], home?: LzOftHome): Hex {
+  requireLzOftDestinations(destinations, home);
+  return dispatchTreeFromHashes(destinations.map(lzOftLeafHash)).root;
 }
 
 /**
- * `LzOftMessage.root`: the `destRoot` the factory computes from `leaves` and binds into the conduit's address.
- * The leaves must already be in ascending `chainKey` order (see `lzOftLeaves`).
+ * Calldata for the owner Safe to CALL `ILzOftConduitFactory.createTransmitter`. The factory checks peers
+ * and fixes signed mode from the Safe's installed guard at creation.
  */
-export function lzOftRoot(leaves: readonly LzOftLeaf[], home?: LzOftHome): Hex {
-  requireLzOftLeaves(leaves, home);
-  return dispatchTreeFromHashes(leaves.map(lzOftLeafHash)).root;
-}
-
-/**
- * `LzOftConduitFactory.createTransmitter(salt, homeOft, leaves)`. The owner is the caller, so the owner Safe sends
- * this as a CALL to the factory. Plain and signed conduits are created the same way: the factory fixes signed mode
- * when the owner Safe's guard is installed at that moment, which this package cannot read. Peers, eids and the
- * guard are not checked here.
- */
-export function createLzOftTransmitterCalldata(salt: Hex, homeOft: Address, leaves: readonly LzOftLeaf[]): Hex {
-  requireLzOftLeaves(leaves);
-  return encodeFunctionData({ abi: lzOftConduitFactoryAbi, functionName: "createTransmitter", args: [salt, homeOft, leaves] });
+export function createLzOftTransmitterCalldata(salt: Hex, homeOft: Address, destinations: readonly LzOftDestination[]): Hex {
+  requireLzOftDestinations(destinations);
+  return encodeFunctionData({ abi: lzOftConduitFactoryAbi, functionName: "createTransmitter", args: [salt, homeOft, destinations] });
 }
 
 /** The owner Safe's CALL to the factory that creates the conduit, as `signedDispatchTx` builds any plain CALL. */
-export function lzOftCreateTx(chainId: bigint, ownerSafe: Address, factory: Address, nonce: bigint, salt: Hex, homeOft: Address, leaves: readonly LzOftLeaf[]): SafeTxEnvelope {
-  return signedDispatchTx(chainId, ownerSafe, factory, nonce, createLzOftTransmitterCalldata(salt, homeOft, leaves));
+export function lzOftCreateTx(chainId: bigint, ownerSafe: Address, factory: Address, nonce: bigint, salt: Hex, homeOft: Address, destinations: readonly LzOftDestination[]): SafeTxEnvelope {
+  return signedDispatchTx(chainId, ownerSafe, factory, nonce, createLzOftTransmitterCalldata(salt, homeOft, destinations));
 }
 
 export type LzOftConduitFields = { owner: Address; salt: Hex; homeChainKey: Hex; homeEid: number; homeOft: Address; destRoot: Hex };

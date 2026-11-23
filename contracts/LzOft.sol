@@ -36,15 +36,16 @@ library LzOft {
     }
 
     /// @notice Offline validation before the home chain is known. A zero chain key is invalid.
-    function requireLeaves(ILzOftConduitFactory.Destination[] memory destinations) internal pure {
+    function requireDestinations(ILzOftConduitFactory.Destination[] memory destinations) internal pure {
         LzOftConduitAddress.requireDestinations(destinations, bytes32(0), 0);
     }
 
     /// @notice Offline validation for the given home chain and endpoint.
-    function requireLeaves(ILzOftConduitFactory.Destination[] memory destinations, bytes32 homeChainKey, uint32 homeEid)
-        internal
-        pure
-    {
+    function requireDestinations(
+        ILzOftConduitFactory.Destination[] memory destinations,
+        bytes32 homeChainKey,
+        uint32 homeEid
+    ) internal pure {
         LzOftConduitAddress.requireDestinations(destinations, homeChainKey, homeEid);
     }
 
@@ -68,7 +69,7 @@ library LzOft {
         address homeOft,
         ILzOftConduitFactory.Destination[] memory destinations
     ) internal pure returns (bytes memory) {
-        requireLeaves(destinations);
+        requireDestinations(destinations);
         return abi.encodeCall(ILzOftConduitFactory.createTransmitter, (salt, homeOft, destinations));
     }
 
