@@ -10,7 +10,7 @@ generated ABI header and `PROTOCOL_VERSION` repeat it, and ts/test/protocolRelea
 import json, pathlib, re, shutil, subprocess, sys
 
 VERSION = '0.4.0'
-REVISION = 'df1c6421579aefebf99b0d7510b6bf137b5cd7d9'  # protocol PR #183 package candidate
+REVISION = '59b140c3e2133b4fca54dd4fdac77c99487d937b'  # the npm-v0.4.0 tag
 root = pathlib.Path(__file__).resolve().parents[1]
 
 # (exported name, Forge profile directory, artifact file, contract)
