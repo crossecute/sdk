@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@crossecute/protocol':
-        specifier: 0.3.0
-        version: 0.3.0(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)
+        specifier: 0.4.0
+        version: 0.4.0(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)
     devDependencies:
       '@openzeppelin/contracts':
         specifier: 5.4.0
@@ -39,8 +39,8 @@ packages:
   '@adraffy/ens-normalize@1.11.1':
     resolution: {integrity: sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ==}
 
-  '@crossecute/protocol@0.3.0':
-    resolution: {integrity: sha512-MfnvquVV6g+1PvRBYAcbuPuKlJaqNliAvwvAED8wLVfgRMLu2c2ah0AIeiPpkWpYZCeu9VG+pWqZYNBueCESeg==}
+  '@crossecute/protocol@0.4.0':
+    resolution: {integrity: sha512-Us1DhMdcDnmTx1V7PR7EiHLZTkWO/6m9jmIHSxGYoZAL3Q4rRmTfJDbljtzO5zYGUSt7rC7ElhN9C+UxTcvzzw==}
     peerDependencies:
       '@openzeppelin/contracts': 5.4.0
       '@openzeppelin/contracts-upgradeable': 5.4.0
@@ -647,7 +647,7 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.1': {}
 
-  '@crossecute/protocol@0.3.0(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)':
+  '@crossecute/protocol@0.4.0(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)':
     dependencies:
       '@openzeppelin/contracts': 5.4.0
     optionalDependencies:

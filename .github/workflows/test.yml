@@ -60,7 +60,7 @@ jobs:
       - run: scripts/check-forge-attest.sh
         if: matrix.manager == 'pnpm'
 
-  # The pin is the commit of the protocol release's tag. This fails if the generated ABIs, authority vectors or
+  # The pin is the commit used to build the protocol package. This fails if the generated ABIs, authority vectors or
   # OFT pins differ from what that commit produces, or the OFT vectors differ from what its contracts compute.
   protocol-pin:
     runs-on: ubuntu-latest
@@ -83,15 +83,12 @@ jobs:
         with:
           version: v1.8.1
 
-      - run: forge build src
+      - run: npm --prefix npm run build
         working-directory: protocol/contracts/evm
-
-      - run: forge build src
-        working-directory: protocol/contracts/safe-guard
 
       - run: python3 scripts/sync-protocol.py --check protocol
 
-      # Runs protocol's LzOftMessage, LzMessage and LzOftConduitFactory over vectors/lzoft.json; protocol has no
+      # Runs protocol's LzOftConduitAddress, LzMessage and LzOftConduitFactory over vectors/lzoft.json; protocol has no
       # literal OFT vectors to copy. Adds and removes a script in the disposable checkout. `forge script` compiles
-      # only what the script imports, so the submodules above suffice: about 1 s after the src builds, 13 s alone.
+      # only what the script imports, so the submodules above suffice: about 1 s after the package build, 13 s alone.
       - run: python3 scripts/check-lzoft-vectors.py protocol

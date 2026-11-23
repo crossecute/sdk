@@ -1,5 +1,9 @@
 import { readFileSync } from "node:fs";
-import { IConduitTransceiverAbi, ICrossecuteGuardAbi } from "@crossecute/protocol/abi";
+import {
+  DispatchLeavesAbi, IConduitTransceiverAbi, ICrossecuteGuardAbi, ILzOftConduitFactoryAbi, OrderedMerkleAbi,
+  SignedDispatchCallsAbi,
+} from "@crossecute/protocol/abi";
+import { decodeErrorResult, encodeErrorResult, toFunctionSelector, zeroHash } from "viem";
 import { describe, expect, it } from "vitest";
 import * as sdk from "../src/index.js";
 import { PROTOCOL_VERSION } from "../src/signedAbi.js";
@@ -52,7 +56,7 @@ describe("protocol release pin", () => {
       const present = abi.filter((f) => f.type === "function").map((f) => f.name);
       for (const fn of fns) expect(present, fn).toContain(fn);
     };
-    has(sdk.signedTransmitterAbi, "quoteBootstrap", "quoteRelay", "relayAuthority", "quoteAuthority", "isSigned", "relayLeaf", "registerRoot", "quoteMessageSigned", "sendMessage", "bootstrap");
+    has(sdk.signedTransmitterAbi, "quoteBootstrap", "quoteLeaf", "relayAuthority", "quoteAuthority", "isSigned", "relayLeaf", "registerRoot", "quoteMessageSigned", "sendMessage", "bootstrap");
     has(sdk.signedReceiverAbi, "selection", "graph", "submitLeaf", "submitMessage", "submitAuthority");
     has(sdk.transceiverBaseAbi, "predictReceiver", "bootstrapSigned", "quoteBootstrapSigned");
     has(sdk.conduitTransceiverAbi, "predictReceiver", "signedAuthority");
@@ -68,12 +72,36 @@ describe("protocol release pin", () => {
     }
   });
 
-  it("keeps the OFT factory's creation errors, with the leaf ordering rule, in the ABI", () => {
+  it("keeps the OFT factory's creation errors, with the destination ordering rule, in the ABI", () => {
     const errors = sdk.lzOftConduitFactoryAbi.filter((f) => f.type === "error").map((f) => f.name);
-    expect(errors).toEqual(expect.arrayContaining(["NoDestinations", "LeavesNotSorted", "BadLeaf", "NotAnOft"]));
+    expect(errors).toEqual(expect.arrayContaining(["NoDestinations", "DestinationsNotSorted", "BadDestination", "NotAnOft", "PeerChanged"]));
     const create = sdk.lzOftConduitFactoryAbi.find((f) => f.type === "function" && f.name === "createTransmitter")!;
-    expect(create.inputs.map((i) => i.name)).toEqual(["salt", "homeOft", "leaves"]);
+    expect(create.inputs.map((i) => i.name)).toEqual(["salt", "homeOft", "destinations"]);
     expect((create.inputs[2] as any).components.map((c: any) => `${c.name}:${c.type}`)).toEqual(["chainKey:bytes32", "eid:uint32", "oft:address"]);
+  });
+
+  it("quotes a leaf with the relay arguments at a separate selector", () => {
+    const quote = sdk.signedTransmitterAbi.find((item) => item.type === "function" && item.name === "quoteLeaf")!;
+    const relay = sdk.signedTransmitterAbi.find((item) => item.type === "function" && item.name === "relayLeaf")!;
+    expect(quote.inputs).toEqual(relay.inputs);
+    expect(toFunctionSelector(quote)).not.toBe(toFunctionSelector(relay));
+  });
+
+  it("decodes errors originating in the shared libraries and OFT factory interface", () => {
+    const callError = encodeErrorResult({
+      abi: SignedDispatchCallsAbi, errorName: "WindowClosed", args: [1n, 2n],
+    });
+    expect(decodeErrorResult({ abi: sdk.signedReceiverAbi, data: callError }).errorName).toBe("WindowClosed");
+    const proofError = encodeErrorResult({ abi: DispatchLeavesAbi, errorName: "InvalidProof" });
+    expect(decodeErrorResult({ abi: sdk.signedReceiverAbi, data: proofError }).errorName).toBe("InvalidProof");
+    const treeError = encodeErrorResult({ abi: OrderedMerkleAbi, errorName: "IndexOutOfRange", args: [1n, 1n] });
+    expect(decodeErrorResult({ abi: sdk.lzOftConduitFactoryAbi, data: treeError }).args).toEqual([1n, 1n]);
+    const peerError = encodeErrorResult({
+      abi: ILzOftConduitFactoryAbi, errorName: "PeerChanged", args: [30101, zeroHash, zeroHash],
+    });
+    for (const abi of [sdk.lzOftConduitFactoryAbi, sdk.lzOftTransmitterAbi, sdk.lzOftReceiverAbi]) {
+      expect(decodeErrorResult({ abi, data: peerError }).errorName).toBe("PeerChanged");
+    }
   });
 
   it("exports the protocol ABIs the builders read", () => {

@@ -16,10 +16,10 @@ The sample pair comes from the [Foundry Safe transaction test](../test/SafeTx.t.
 ## Install
 
 ```bash
-pnpm add @crossecute/sdk @crossecute/protocol@0.3.0 viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
+pnpm add @crossecute/sdk @crossecute/protocol@0.4.0 viem @openzeppelin/contracts@5.4.0 @openzeppelin/contracts-upgradeable@5.4.0
 ```
 
-With npm, use `npm install` with the same packages. The SDK is built against `@crossecute/protocol` 0.3.0, so install
+With npm, use `npm install` with the same packages. The SDK is built against `@crossecute/protocol` 0.4.0, so install
 that version and let both packages resolve one copy.
 
 Add these Foundry remappings to your project:
@@ -277,16 +277,19 @@ first.
 
 ## Safe-signed dispatch
 
-The signed API is built against `@crossecute/protocol` 0.3.0. It includes `SafeTxEvidence { signedSafeTx,
-nestedApprovals }`, `SignedSafeTx`, `NestedSafeApproval`, `AuthorityGraph`, execution leaves,
-`SignedBootstrap`, and the current transmitter, receiver (including nonce and authority views), transceiver,
-guard, and `SafeBatchExecutor` ABIs, trimmed to the functions and events the builders and this document use
-plus every custom error, so reverts decode; inherited access-control and admin members are omitted. The
-Solidity types, conduit transceiver ABI, and guard ABI come from the installed protocol package.
-`scripts/sync-protocol.py` generates `ts/src/signedAbi.ts`,
-`vectors/authority.json` and `vectors/lzoft-protocol.json` from the release's tagged commit, CI regenerates
-them and fails on a difference, and `ts/test/protocolRelease.test.ts` fails if the dependency, the pinned
-version and revision, and the generated files disagree.
+The signed API targets `@crossecute/protocol` 0.4.0. It includes `SafeTxEvidence { signedSafeTx,
+nestedApprovals }`, `SignedSafeTx`, `NestedSafeApproval`, `AuthorityGraph`, execution leaves and
+`SignedBootstrap`. The SDK's signed transmitter and receiver ABIs combine the protocol interfaces
+with the inherited functions and events used by the SDK and the library errors needed to decode
+reverts. The conduit transceiver, Crossecute guard, source authority guard and `SafeBatchExecutor`
+ABIs come from the protocol package. The release address of `CrossecuteGuard` is
+`0xD8778814ba151BCc94Ebe20a28A4979442cD3b56`. Resolve deployed conduit addresses through the
+configured transceiver or factory.
+
+`OrderedMerkle` defines the guard's publication tree and the OFT destination tree. Leaves
+retain their input order, each pair is hashed smaller child first, and an unpaired node moves
+up unchanged. `scripts/sync-protocol.py` regenerates the SDK ABIs and protocol vectors from
+the pinned build revision. CI checks the generated files and the installed package version.
 The existing plain planner and `crossecute check` still handle plain plans only.
 
 ### Authority model
@@ -464,7 +467,7 @@ requires the root registered on that transmitter, unused leaf state, live quorum
 route. Direct receiver submission verifies the signed registration/proof independently of
 source registration or publication. It shares replay state with provider delivery.
 
-Quote relay fees with `signedTransmitterAbi.quoteRelay` using the **funding relayer's account**,
+Quote relay fees with `signedTransmitterAbi.quoteLeaf` using the **funding relayer's account**,
 then pay from that same account when calling `relayLeaf`; recipient-sensitive provider quotes
 must match the sender. Excess and synchronous refunds return to the relayer; the transmitter's
 prefunded balance is preserved. Top-ups for direct submissions remain at the receiver,
@@ -636,28 +639,27 @@ its own signing flow.
 The `layerzero-oft` binding sends every message through an OFT its own team operates, from the
 conduit itself, and a factory with no owner creates the conduit at home and its receiver on each
 destination. Its rules are protocol's
-[`docs/providers/layerzero-oft-spec.md`](https://github.com/crossecute/protocol/blob/npm-v0.3.0/docs/providers/layerzero-oft-spec.md)
-(L1 to L5 and the OFT prerequisites O1 to O7). The signed entry points are the ones of the sections
-above and are unchanged: `sendMessageCalldataSigned`, `registerRootCalldata`, `relayLeafCalldata`, `submitLeafCalldata`,
+[`docs/providers/layerzero-oft-spec.md`](https://github.com/crossecute/protocol/blob/59b140c3e2133b4fca54dd4fdac77c99487d937b/docs/providers/layerzero-oft-spec.md)
+(L1 to L5 and the OFT prerequisites O1 to O7). Use the signed SDK builders `sendMessageCalldataSigned`, `registerRootCalldata`, `relayLeafCalldata`, `submitLeafCalldata`,
 `submitMessageCalldata`, `bootstrapCalldataSigned`, the Merkle package and the delivery bundle. The OFT
 transmitter implements the same signed bootstrap hooks as every signed transmitter, and the factory's
-`signedConduitBootstrap` builds the destination envelope on chain from the body
-`bootstrapCalldataSigned` encodes. What is OFT specific is the options attribute and conduit creation.
+`signedConduitBootstrap(route, owner, salt, body)` builds the destination envelope on chain from the body
+`bootstrapCalldataSigned` encodes. The owner and salt must derive the calling conduit. What is OFT specific is the options attribute and conduit creation.
 
 ```ts
 import {
-  chainKey, encodeCalls, encodeEvm, encodeEvmChain, lzOftCreateTx, lzOftLeaves, lzOftRoot, lzOptionsAttribute,
+  chainKey, encodeCalls, encodeEvm, encodeEvmChain, lzOftCreateTx, lzOftDestinations, lzOftRoot, lzOptionsAttribute,
   predictLzOftConduit, bootstrapCalldataSigned, sendMessageCalldataSigned,
 } from "@crossecute/sdk";
 
 // Peers of the home OFT, one per destination; the factory reads them, the SDK does not.
 const home = { chainKey: chainKey(homeChainId), eid: homeEid };
-const leaves = lzOftLeaves(destinations, home); // [{ chainId, eid, oft }], sorted by chain key
-const destRoot = lzOftRoot(leaves, home);
+const destinations = lzOftDestinations(peers, home); // peers contain chainId, eid and oft
+const destRoot = lzOftRoot(destinations, home);
 // proxyInitCodeHash is the deployed factory's PROXY_INIT_CODE_HASH() (lzOftConduitFactoryAbi).
 const conduit = predictLzOftConduit(factory, { owner: ownerSafe, salt, homeChainKey: home.chainKey, homeEid, homeOft, destRoot }, proxyInitCodeHash);
 // Compare with `predictConduit` on the deployed factory before relying on it.
-const creation = lzOftCreateTx(homeChainId, ownerSafe, factory, safeNonce, salt, homeOft, leaves); // Safe CALL
+const creation = lzOftCreateTx(homeChainId, ownerSafe, factory, safeNonce, salt, homeOft, destinations); // Safe CALL
 
 const attributes = [lzOptionsAttribute(rawOptions)];
 const send = sendMessageCalldataSigned(encodeEvm(destinationChainId, conduit), encodeCalls(calls), attributes);
@@ -672,18 +674,20 @@ needs. Protocol reads an attribute with no options as present and empty, not as 
 both builders reject empty options and odd-length hex; the content is not otherwise validated. Any other
 attribute reverts.
 
-**Creation.** `createTransmitter(salt, homeOft, leaves)` is called by the owner Safe, which becomes the
-conduit's owner. Each leaf is `{ chainKey, eid, oft }`: a destination, its endpoint id and the home
-OFT's peer there. The factory hashes each leaf twice (`lzOftLeafHash`), builds the destination root
-over the leaf hashes in the order given, and binds `keccak256(abi.encode(owner, salt, homeChainKey,
-homeEid, homeOft, destRoot))` into the CREATE2 salt, so the address changes with any of them. Leaves
-must be in strictly ascending `chainKey` order, which is a hash order and not the chain id order, and a
-repeated chain key is refused. `lzOftLeaves` sorts by chain id for you; `lzOftRoot`,
-`requireLzOftLeaves` and `createLzOftTransmitterCalldata` reject unsorted input with the factory's
-`LeavesNotSorted(index)`, and also reject no leaves, a zero eid or OFT, and, given the home, a leaf for
-the home chain or the home's eid. The Foundry `LzOft` library offers the same checks, root, calldata and
-prediction (`LzOft.root`, `createTransmitterCalldata`, `predictConduit`) for leaves already in order.
-Destinations are fixed at creation: another chain needs another conduit.
+**Creation.** The owner Safe calls `createTransmitter(salt, homeOft, destinations)` on
+`ILzOftConduitFactory`. Each `Destination { chainKey, eid, oft }` commits to a chain, its endpoint ID
+and the home OFT's peer on that chain. The protocol's `LzOftConduitAddress` library hashes each
+destination twice and builds the destination root from those leaf hashes. The factory derives the
+CREATE2 salt as `keccak256(abi.encode(owner, salt, homeChainKey, homeEid, homeOft, destRoot))`.
+
+`lzOftDestinations` resolves chain IDs to chain keys and sorts the records by chain key.
+`requireLzOftDestinations`, `lzOftRoot` and `createLzOftTransmitterCalldata` validate the factory's
+strict ascending order and return `DestinationsNotSorted(index)` for out-of-order or repeated
+keys. They reject an empty list with `NoDestinations` and invalid records with `BadDestination(index)`.
+The online factory and conduits surface `PeerChanged(eid, expected, actual)` if the OFT peer differs
+from the committed destination. Solidity scripts use `ILzOftConduitFactory.Destination` and
+`LzOft.requireDestinations`, `LzOft.root`, `LzOft.createTransmitterCalldata` and `LzOft.predictConduit`.
+Destinations are fixed at creation. Adding another chain requires another conduit.
 
 This creation path serves plain and signed conduits alike, and the factory fixes the mode at creation
 from the owner Safe's guard (`SafeViewer.isSigned`): the Crossecute guard must already be installed on

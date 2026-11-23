@@ -8,6 +8,8 @@ flowchart LR
     Sim --> Tx["Build one Safe transaction"] --> Check["Check against the plan"]
 ```
 
+The SDK targets `@crossecute/protocol` 0.4.0.
+
 ## Verify a sample Safe transaction
 
 Save [plan.json](https://github.com/crossecute/sdk/blob/main/examples/verify-safe-tx/plan.json)

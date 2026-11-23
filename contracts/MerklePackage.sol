@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {ExecutionLeaf} from "@crossecute/protocol/messaging/signed/types/SignedDispatchTypes.sol";
+import {OrderedMerkle} from "@crossecute/protocol/messaging/OrderedMerkle.sol";
 import {DispatchLeaves} from "@crossecute/protocol/messaging/signed/DispatchLeaves.sol";
 import {SignedDispatch} from "./SignedDispatch.sol";
 
@@ -58,15 +59,9 @@ library MerklePackages {
         bytes32[] memory hashes = _leafHashes(leaves, receiverNonces);
         pkg.receiverNonces = receiverNonces;
         pkg.leaves = new MerkleEntry[](leaves.length);
+        pkg.root = OrderedMerkle.root(hashes);
         for (uint256 i; i < leaves.length; ++i) {
-            // `treeOfHashes` overwrites its input level by level.
-            bytes32[] memory level = new bytes32[](hashes.length);
-            for (uint256 j; j < level.length; ++j) {
-                level[j] = hashes[j];
-            }
-            bytes32[] memory siblings;
-            (pkg.root, siblings) = SignedDispatch.treeOfHashes(level, i);
-            pkg.leaves[i] = MerkleEntry(leaves[i], hashes[i], siblings);
+            pkg.leaves[i] = MerkleEntry(leaves[i], hashes[i], OrderedMerkle.proof(hashes, i));
         }
     }
 
