@@ -49,7 +49,7 @@
     "forge-std": "github:foundry-rs/forge-std#v1.17.0",
     "typescript": "7.0.2",
     "viem": "2.57.18",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   },
   "repository": {
     "type": "git",
